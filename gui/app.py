@@ -231,6 +231,80 @@ class TrafficApp:
         # Oeste
         self.canvas.create_line(CENTRO_X - stop_offset, CENTRO_Y, CENTRO_X - stop_offset, CENTRO_Y + ANCHO_CALLE/2, fill="white", width=3)
 
+    def crear_vehiculo_visual(self, x, y, w, h, color, direccion, tag):
+        """
+        Dibuja un vehículo detallado (estilo Top-Down) y agrupa los elementos bajo un tag.
+        Dirección: 'N' (mira abajo), 'S' (mira arriba), 'E' (mira izq), 'O' (mira der)
+        Nota: La dirección es hacia dónde apunta el frente del auto.
+        """
+        # Coordenadas bounding box
+        x1, y1 = x - w/2, y - h/2
+        x2, y2 = x + w/2, y + h/2
+        
+        # 1. Sombra (pequeño offset)
+        # Tkinter no soporta HEX con Alpha (#RRGGBBAA). Usamos un gris oscuro sólido para simular sombra.
+        self.canvas.create_oval(x1+2, y1+2, x2+2, y2+2, fill="#1a1a1a", outline="", tags=tag)
+        # Mejor usamos stipple para semi-transparencia si fuera necesario, pero gris oscuro plano (sombra sólida) está bien para estilo flat
+        self.canvas.create_rectangle(x1+3, y1+3, x2+3, y2+3, fill="#111", outline="", tags=tag) # Sombra simple
+        
+        # 2. Carrocería
+        # Usamos polygon para esquinas redondeadas simuladas o simplemente rect
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="#2c3e50", width=1, tags=tag)
+        
+        # Colores de detalles
+        glass_color = "#34495e" # Vidrios oscuros
+        headlight_color = "#f1c40f" # Faros amarillos
+        taillight_color = "#e74c3c" # Luces rojas
+        
+        # 3. Detalles según orientación
+        if direccion in ['N', 'S']: # Vertical
+            # Techo (Roof) - simula parabrisas y luneta trasera dejando huecos
+            roof_margin_y = h * 0.25
+            roof_margin_x = 2
+            self.canvas.create_rectangle(x1+roof_margin_x, y1+roof_margin_y, x2-roof_margin_x, y2-roof_margin_y, 
+                                       fill=color, outline=glass_color, width=2, tags=tag)
+            
+            # Faros
+            fw, fh = 4, 3 # Dimensión faros
+            if direccion == 'N': # Mira ABAJO
+                # Delanteros (Abajo)
+                self.canvas.create_rectangle(x1+2, y2-fh, x1+2+fw, y2, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y2-fh, x2-2, y2, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Arriba)
+                self.canvas.create_rectangle(x1+2, y1, x1+2+fw, y1+fh, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y1, x2-2, y1+fh, fill=taillight_color, outline="", tags=tag)
+            else: # Mira ARRIBA
+                # Delanteros (Arriba)
+                self.canvas.create_rectangle(x1+2, y1, x1+2+fw, y1+fh, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y1, x2-2, y1+fh, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Abajo)
+                self.canvas.create_rectangle(x1+2, y2-fh, x1+2+fw, y2, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y2-fh, x2-2, y2, fill=taillight_color, outline="", tags=tag)
+                
+        else: # Horizontal
+            # Techo
+            roof_margin_x = w * 0.25
+            roof_margin_y = 2
+            self.canvas.create_rectangle(x1+roof_margin_x, y1+roof_margin_y, x2-roof_margin_x, y2-roof_margin_y, 
+                                       fill=color, outline=glass_color, width=2, tags=tag)
+            
+            # Faros
+            fw, fh = 3, 4
+            if direccion == 'E': # Mira IZQUIERDA (<--)
+                # Delanteros (Izq)
+                self.canvas.create_rectangle(x1, y1+2, x1+fw, y1+2+fh, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x1, y2-2-fh, x1+fw, y2-2, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Der)
+                self.canvas.create_rectangle(x2-fw, y1+2, x2, y1+2+fh, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-fw, y2-2-fh, x2, y2-2, fill=taillight_color, outline="", tags=tag)
+            else: # Mira DERECHA (-->)
+                # Delanteros (Der)
+                self.canvas.create_rectangle(x2-fw, y1+2, x2, y1+2+fh, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-fw, y2-2-fh, x2, y2-2, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Izq)
+                self.canvas.create_rectangle(x1, y1+2, x1+fw, y1+2+fh, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x1, y2-2-fh, x1+fw, y2-2, fill=taillight_color, outline="", tags=tag)
+
     def procesar_mensajes(self):
         try:
             while not self.cola.empty():
@@ -308,37 +382,43 @@ class TrafficApp:
     def actualizar_cola_visual(self, id_sem, cantidad):
         """Dibuja rectángulos estáticos representando la cola de espera"""
         # Limpiar cola anterior
-        for item in self.colas_graficas[id_sem]:
-            self.canvas.delete(item)
+        for tag in self.colas_graficas[id_sem]:
+            self.canvas.delete(tag)
         self.colas_graficas[id_sem] = []
         
         # Parámetros de dibujo
-        w_auto, h_auto = 20, 30
-        gap = 5
+        w_auto, h_auto = 22, 36  # Un poco más grandes y proporcionales
+        gap = 8
         stop_dist = ANCHO_CALLE/2 + 15
         
         # Limitar visualización a 10 autos para no saturar
         cantidad_visible = min(cantidad, 12)
         
         for i in range(cantidad_visible):
-            if id_sem == 'N': # Cola hacia arriba
-                x = CENTRO_X - ANCHO_CALLE/4
-                y = (CENTRO_Y - stop_dist) - (i * (h_auto + gap)) - h_auto
-                rect = self.canvas.create_rectangle(x-10, y, x+10, y+h_auto, fill=COLOR_AUTO_ESPERA, outline="black")
-            elif id_sem == 'S': # Cola hacia abajo
-                x = CENTRO_X + ANCHO_CALLE/4
-                y = (CENTRO_Y + stop_dist) + (i * (h_auto + gap))
-                rect = self.canvas.create_rectangle(x-10, y, x+10, y+h_auto, fill=COLOR_AUTO_ESPERA, outline="black")
-            elif id_sem == 'E': # Cola hacia derecha
-                x = (CENTRO_X + stop_dist) + (i * (h_auto + gap))
-                y = CENTRO_Y - ANCHO_CALLE/4
-                rect = self.canvas.create_rectangle(x, y-10, x+h_auto, y+10, fill=COLOR_AUTO_ESPERA, outline="black")
-            elif id_sem == 'O': # Cola hacia izquierda
-                x = (CENTRO_X - stop_dist) - (i * (h_auto + gap)) - h_auto
-                y = CENTRO_Y + ANCHO_CALLE/4
-                rect = self.canvas.create_rectangle(x, y-10, x+h_auto, y+10, fill=COLOR_AUTO_ESPERA, outline="black")
+            tag = f"cola_{id_sem}_{i}" # Tag único para este auto
             
-            self.colas_graficas[id_sem].append(rect)
+            if id_sem == 'N': # Cola hacia arriba, miran hacia ABAJO ('N')
+                x = CENTRO_X - ANCHO_CALLE/4
+                y = (CENTRO_Y - stop_dist) - (i * (h_auto + gap)) - h_auto/2
+                self.crear_vehiculo_visual(x, y, w_auto, h_auto, COLOR_AUTO_ESPERA, 'N', tag)
+                
+            elif id_sem == 'S': # Cola hacia abajo, miran hacia ARRIBA ('S')
+                x = CENTRO_X + ANCHO_CALLE/4
+                y = (CENTRO_Y + stop_dist) + (i * (h_auto + gap)) + h_auto/2
+                self.crear_vehiculo_visual(x, y, w_auto, h_auto, COLOR_AUTO_ESPERA, 'S', tag)
+                
+            elif id_sem == 'E': # Cola hacia derecha, miran hacia IZQUIERDA ('E')
+                # Nota: Intercambiamos w y h para coches horizontales
+                x = (CENTRO_X + stop_dist) + (i * (w_auto + gap)) + w_auto/2 # w_auto es el largo aquí
+                y = CENTRO_Y - ANCHO_CALLE/4
+                self.crear_vehiculo_visual(x, y, h_auto, w_auto, COLOR_AUTO_ESPERA, 'E', tag) # w=36, h=22
+                
+            elif id_sem == 'O': # Cola hacia izquierda, miran hacia DERECHA ('O')
+                x = (CENTRO_X - stop_dist) - (i * (w_auto + gap)) - w_auto/2
+                y = CENTRO_Y + ANCHO_CALLE/4
+                self.crear_vehiculo_visual(x, y, h_auto, w_auto, COLOR_AUTO_ESPERA, 'O', tag)
+            
+            self.colas_graficas[id_sem].append(tag)
         
         # Asegurar que el semáforo completo esté encima
         sg = self.sem_graficos[id_sem]
@@ -351,58 +431,66 @@ class TrafficApp:
 
     def generar_auto_cruzando(self, id_sem):
         """Crea un auto animado que cruza la intersección"""
-        w, h = 20, 30
+        w, h = 22, 36
         vx, vy = 0, 0
+        import time
+        tag = f"mov_{id_sem}_{int(time.time()*1000)}" # Tag único con timestamp
         
         # Determinar posición inicial y velocidad según dirección
-        if id_sem == 'N': # Baja
+        if id_sem == 'N': # Baja, mira ABAJO
             x = CENTRO_X - ANCHO_CALLE/4
             y = CENTRO_Y - ANCHO_CALLE/2 - 20
             vx, vy = 0, 8
-            rect = self.canvas.create_rectangle(x-10, y, x+10, y+h, fill=COLOR_AUTO_CRUZANDO)
-        elif id_sem == 'S': # Sube
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AUTO_CRUZANDO, 'N', tag)
+            
+        elif id_sem == 'S': # Sube, mira ARRIBA
             x = CENTRO_X + ANCHO_CALLE/4
             y = CENTRO_Y + ANCHO_CALLE/2 + 20
             vx, vy = 0, -8
-            rect = self.canvas.create_rectangle(x-10, y-h, x+10, y, fill=COLOR_AUTO_CRUZANDO)
-        elif id_sem == 'E': # Va a izquierda
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AUTO_CRUZANDO, 'S', tag)
+            
+        elif id_sem == 'E': # Va a izquierda, mira IZQUIERDA
             x = CENTRO_X + ANCHO_CALLE/2 + 20
             y = CENTRO_Y - ANCHO_CALLE/4
             vx, vy = -8, 0
-            rect = self.canvas.create_rectangle(x, y-10, x+h, y+10, fill=COLOR_AUTO_CRUZANDO)
-        elif id_sem == 'O': # Va a derecha
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AUTO_CRUZANDO, 'E', tag)
+            
+        elif id_sem == 'O': # Va a derecha, mira DERECHA
             x = CENTRO_X - ANCHO_CALLE/2 - 20
             y = CENTRO_Y + ANCHO_CALLE/4
             vx, vy = 8, 0
-            rect = self.canvas.create_rectangle(x-h, y-10, x, y+10, fill=COLOR_AUTO_CRUZANDO)
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AUTO_CRUZANDO, 'O', tag)
             
-        self.autos_animados.append({'id': rect, 'vx': vx, 'vy': vy})
+        self.autos_animados.append({'tag': tag, 'vx': vx, 'vy': vy}) # Guardamos el TAG
+
 
     def bucle_animacion(self):
         """Actualiza la posición de los autos animados"""
         por_eliminar = []
         
         for auto in self.autos_animados:
-            # Mover el rectángulo
-            self.canvas.move(auto['id'], auto['vx'], auto['vy'])
+            # Mover TODO el grupo asociado al tag
+            self.canvas.move(auto['tag'], auto['vx'], auto['vy'])
             
-            # Si es ambulancia, mover también el texto
+            # Si es ambulancia, mover también el texto (aunque ahora la ambulancia puede usar tags grupo si la actualizamos)
             if 'texto' in auto:
                 self.canvas.move(auto['texto'], auto['vx'], auto['vy'])
             
-            coords = self.canvas.coords(auto['id'])
+            # Obtener coords del bounding box del grupo
+            coords = self.canvas.bbox(auto['tag'])
             
             # Verificar si salió de la pantalla
-            if (coords[2] < 0 or coords[0] > ANCHO_VENTANA or 
-                coords[3] < 0 or coords[1] > ALTO_VENTANA):
+            if not coords or (coords[2] < 0 or coords[0] > ANCHO_VENTANA or 
+                              coords[3] < 0 or coords[1] > ALTO_VENTANA):
                 por_eliminar.append(auto)
         
         # Limpieza
         for auto in por_eliminar:
-            self.canvas.delete(auto['id'])
-            if 'texto' in auto:  # Si es ambulancia, eliminar también el texto
+            self.canvas.delete(auto['tag']) # Borra todo el grupo
+            if 'texto' in auto:  # Si es ambulancia antigua
                 self.canvas.delete(auto['texto'])
             self.autos_animados.remove(auto)
+
         
         # Asegurar que todos los semáforos siempre estén encima
         for sem_id, sg in self.sem_graficos.items():
@@ -461,35 +549,47 @@ class TrafficApp:
     
     def generar_ambulancia_cruzando(self, id_sem):
         """Crea una ambulancia animada que cruza la intersección con prioridad"""
-        w, h = 25, 35  # Ambulancia más grande
+        w, h = 25, 38  # Ambulancia más grande
         vx, vy = 0, 0
+        import time
+        tag = f"amb_{id_sem}_{int(time.time()*1000)}"
         
         # Determinar posición inicial y velocidad según dirección
         if id_sem == 'N': # Baja
             x = CENTRO_X - ANCHO_CALLE/4
             y = CENTRO_Y - ANCHO_CALLE/2 - 20
             vx, vy = 0, 10  # Más rápida
-            rect = self.canvas.create_rectangle(x-12, y, x+12, y+h, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AMBULANCIA, 'N', tag)
         elif id_sem == 'S': # Sube
             x = CENTRO_X + ANCHO_CALLE/4
             y = CENTRO_Y + ANCHO_CALLE/2 + 20
             vx, vy = 0, -10
-            rect = self.canvas.create_rectangle(x-12, y-h, x+12, y, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AMBULANCIA, 'S', tag)
         elif id_sem == 'E': # Va a izquierda
             x = CENTRO_X + ANCHO_CALLE/2 + 20
             y = CENTRO_Y - ANCHO_CALLE/4
             vx, vy = -10, 0
-            rect = self.canvas.create_rectangle(x, y-12, x+h, y+12, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AMBULANCIA, 'E', tag)
         elif id_sem == 'O': # Va a derecha
             x = CENTRO_X - ANCHO_CALLE/2 - 20
             y = CENTRO_Y + ANCHO_CALLE/4
             vx, vy = 10, 0
-            rect = self.canvas.create_rectangle(x-h, y-12, x, y+12, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AMBULANCIA, 'O', tag)
         
-        # Añadir texto "AMB" en la ambulancia
-        texto_amb = self.canvas.create_text(x, y, text="AMB", fill="white", font=("Arial", 8, "bold"))
+        # Añadir texto "AMB" sobre la ambulancia (como parte del mismo grupo visual)
+        # Bbox para centrar texto
+        coords = self.canvas.bbox(tag)
+        if coords:
+            cx = (coords[0] + coords[2]) / 2
+            cy = (coords[1] + coords[3]) / 2
+            self.canvas.create_text(cx, cy, text="AMB", fill="white", font=("Arial", 8, "bold"), tags=tag)
+            
+            # Cruz roja distintiva en el techo
+            r_cross = 6
+            self.canvas.create_line(cx-r_cross, cy, cx+r_cross, cy, fill="red", width=3, tags=tag)
+            self.canvas.create_line(cx, cy-r_cross, cx, cy+r_cross, fill="red", width=3, tags=tag)
         
-        self.autos_animados.append({'id': rect, 'vx': vx, 'vy': vy, 'es_ambulancia': True, 'texto': texto_amb})
+        self.autos_animados.append({'tag': tag, 'vx': vx, 'vy': vy, 'es_ambulancia': True})
     
     def iniciar_efecto_sirena(self):
         """Inicia el efecto visual de sirena parpadeando"""
