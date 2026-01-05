@@ -17,85 +17,88 @@ class MonitorPanel:
         self.running = True
         
     def crear_ventana(self):
-        """Crea la ventana de monitoreo"""
+        """Crea la ventana de monitoreo estilo Cyber-Dashboard"""
+        from config import THEME_BG, THEME_BG_SEC, THEME_FG, THEME_FG_SEC, THEME_ACCENT, THEME_BORDER, UI_SUCCESS, UI_INFO, UI_WARNING
+        
         self.window = tk.Toplevel(self.parent)
-        self.window.title("Monitoreo - Hilos/Procesos")
+        self.window.title("System Monitor - Realtime Analytics")
         self.window.geometry("900x700")
+        self.window.configure(bg=THEME_BG)
         self.window.protocol("WM_DELETE_WINDOW", self.cerrar)
         
-        # Header mejorado
-        header = tk.Frame(self.window, bg="#2c3e50", pady=15)
-        header.pack(fill=tk.X)
+        # Container principal con padding
+        main_container = tk.Frame(self.window, bg=THEME_BG, padx=30, pady=30)
+        main_container.pack(fill=tk.BOTH, expand=True)
+
+        # Header limpio
+        header = tk.Frame(main_container, bg=THEME_BG)
+        header.pack(fill=tk.X, pady=(0, 20))
         
-        titulo = tk.Label(header, text="📊 Panel de Monitoreo", 
-                         font=("Arial", 16, "bold"), 
-                         bg="#2c3e50", fg="white")
-        titulo.pack()
+        tk.Label(header, text="SYSTEM MONITOR", font=("Segoe UI", 24, "bold"), 
+                bg=THEME_BG, fg=THEME_FG).pack(anchor="w")
+        tk.Label(header, text=f"Execution Mode: {self.modo}", font=("Segoe UI", 12), 
+                bg=THEME_BG, fg=THEME_ACCENT).pack(anchor="w")
         
-        modo_label = tk.Label(header, text=f"Modo: {self.modo}", 
-                             font=("Arial", 11, "bold"), 
-                             bg="#2c3e50", fg="#ecf0f1")
-        modo_label.pack(pady=(5, 0))
+        # Info Card (Glass style)
+        self.crear_info_sistema(main_container)
         
-        # Frame principal sin scroll (layout fijo 3x2)
-        main_frame = tk.Frame(self.window, bg="#ecf0f1")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
-        
-        # Información del sistema (encabezado)
-        self.crear_info_sistema(main_frame)
+        # Separador / Título de Grid
+        tk.Label(main_container, text="ACTIVE WORKERS STATUS", font=("Segoe UI", 10, "bold"), 
+                bg=THEME_BG, fg=THEME_FG_SEC).pack(anchor="w", pady=(20, 10))
         
         # Grid para workers (3 columnas x 2 filas)
-        self.grid_frame = tk.Frame(main_frame, bg="#ecf0f1")
-        self.grid_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        self.grid_frame = tk.Frame(main_container, bg=THEME_BG)
+        self.grid_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Inicializar estructura para los recuadros
         self.worker_frames = {}
-        
-        # Iniciar actualización
         self.actualizar_monitoreo()
         
     def crear_info_sistema(self, parent):
-        """Crea sección de información del sistema"""
-        frame_info = tk.Frame(parent, bg="#34495e", relief=tk.RAISED, bd=2)
-        frame_info.pack(fill=tk.X, pady=(0, 10))
+        """Crea sección de información del sistema estilo Cyber"""
+        from config import THEME_BG_SEC, THEME_FG, THEME_FG_SEC, UI_SUCCESS, UI_INFO
         
-        # Contenedor interno con padding
-        inner_frame = tk.Frame(frame_info, bg="#34495e", padx=15, pady=12)
-        inner_frame.pack(fill=tk.X)
+        # Card container
+        info_card = tk.Frame(parent, bg=THEME_BG_SEC, padx=20, pady=20)
+        info_card.pack(fill=tk.X)
         
-        # PID del proceso principal
+        # PID Principal
         pid_principal = os.getpid()
-        tk.Label(inner_frame, text=f"🔹 PID Principal: {pid_principal}", 
-                font=("Consolas", 10, "bold"), anchor="w", 
-                bg="#34495e", fg="white").pack(fill=tk.X, pady=3)
         
-        # Información específica del modo
+        # Layout de 2 columnas para info
+        row1 = tk.Frame(info_card, bg=THEME_BG_SEC)
+        row1.pack(fill=tk.X, pady=2)
+        tk.Label(row1, text="Main Process PID:", font=("Segoe UI", 10), bg=THEME_BG_SEC, fg=THEME_FG_SEC).pack(side=tk.LEFT)
+        tk.Label(row1, text=str(pid_principal), font=("Segoe UI", 10, "bold"), bg=THEME_BG_SEC, fg=THEME_FG).pack(side=tk.RIGHT)
+        
+        # Info Modo
+        row2 = tk.Frame(info_card, bg=THEME_BG_SEC)
+        row2.pack(fill=tk.X, pady=2)
+        
         if self.modo == MODO_HILOS:
-            num_workers = len(self.workers) if self.workers else threading.active_count() - 1
             num_hilos = threading.active_count()
-            tk.Label(inner_frame, text=f"🔹 Hilos Totales: {num_hilos} (1 principal + {num_workers} workers)", 
-                    font=("Consolas", 10, "bold"), anchor="w", 
-                    bg="#34495e", fg="#2ecc71").pack(fill=tk.X, pady=3)
-            tk.Label(inner_frame, text="ℹ️  Hilos comparten memoria y espacio de proceso", 
-                    font=("Consolas", 9), anchor="w", 
-                    bg="#34495e", fg="#bdc3c7").pack(fill=tk.X, pady=2)
+            txt_count = f"{num_hilos} Threads (Shared Memory)"
+            col_st = UI_SUCCESS
         else:
             num_workers = len(multiprocessing.active_children())
-            num_procesos = num_workers + 1  # +1 para el principal
-            tk.Label(inner_frame, text=f"🔹 Procesos Totales: {num_procesos} (1 principal + {num_workers} workers)", 
-                    font=("Consolas", 10, "bold"), anchor="w", 
-                    bg="#34495e", fg="#3498db").pack(fill=tk.X, pady=3)
-            tk.Label(inner_frame, text="ℹ️  Procesos tienen memoria aislada", 
-                    font=("Consolas", 9), anchor="w", 
-                    bg="#34495e", fg="#bdc3c7").pack(fill=tk.X, pady=2)
+            txt_count = f"{num_workers + 1} Processes (Isolated Memory)"
+            col_st = UI_INFO
+            
+        tk.Label(row2, text="Concurrency Status:", font=("Segoe UI", 10), bg=THEME_BG_SEC, fg=THEME_FG_SEC).pack(side=tk.LEFT)
+        tk.Label(row2, text=txt_count, font=("Segoe UI", 10, "bold"), bg=THEME_BG_SEC, fg=col_st).pack(side=tk.RIGHT)
         
-        # Información del GIL
+        # GIL Info
+        row3 = tk.Frame(info_card, bg=THEME_BG_SEC)
+        row3.pack(fill=tk.X, pady=2)
+        
+        gil_status = "UNKNOWN"
+        col_gil = THEME_FG_SEC
         if hasattr(sys, "_is_gil_enabled"):
-            gil_status = "DESHABILITADO" if not sys._is_gil_enabled() else "Habilitado"
-            color_gil = "#2ecc71" if not sys._is_gil_enabled() else "#e74c3c"
-            tk.Label(inner_frame, text=f"🔹 GIL: {gil_status}", 
-                    font=("Consolas", 10, "bold"), anchor="w", 
-                    bg="#34495e", fg=color_gil).pack(fill=tk.X, pady=3)
+            enabled = sys._is_gil_enabled()
+            gil_status = "ENABLED (Standard)" if enabled else "DISABLED (Free-Threading)"
+            col_gil = "#f43f5e" if enabled else "#10b981"
+            
+        tk.Label(row3, text="Global Interpreter Lock:", font=("Segoe UI", 10), bg=THEME_BG_SEC, fg=THEME_FG_SEC).pack(side=tk.LEFT)
+        tk.Label(row3, text=gil_status, font=("Segoe UI", 10, "bold"), bg=THEME_BG_SEC, fg=col_gil).pack(side=tk.RIGHT)
     
     
     def obtener_info_worker(self, worker, index):
@@ -130,134 +133,97 @@ class MonitorPanel:
         return info
     
     def actualizar_monitoreo(self):
-        """Actualiza la información del monitoreo en layout 3x2"""
-        if not self.running or not self.window:
+        """Actualiza la información de los workers en tiempo real (Cyber Style)"""
+        from config import THEME_BG, THEME_FG_SEC
+        if not self.window or not self.window.winfo_exists():
             return
-        
+            
         try:
-            # Limpiar frames anteriores
+            # Limpiar grid actual
             for widget in self.grid_frame.winfo_children():
                 widget.destroy()
-            self.worker_frames.clear()
+                
+            # Recrear recuadro del proceso principal (posición 0,0)
+            self.crear_recuadro_cyber(0, 0, None, "Main Controller", is_principal=True)
             
-            # Crear recuadros en grid 3x2 (6 total: 1 principal + 5 workers)
-            # Primero el proceso principal (posición 0,0)
-            self.crear_recuadro_worker(0, 0, None, "Proceso Principal", is_principal=True, worker_index=None)
-            
-            # Luego los 5 workers
+            # Recrear workers
             for i, worker in enumerate(self.workers):
-                # Distribuir en grid: principal en (0,0), workers en:
-                # (0,1), (0,2), (1,0), (1,1), (1,2)
-                if i == 0:
-                    row, col = 0, 1
-                elif i == 1:
-                    row, col = 0, 2
-                elif i == 2:
-                    row, col = 1, 0
-                elif i == 3:
-                    row, col = 1, 1
-                else:  # i == 4
-                    row, col = 1, 2
+                # Layout Grid:
+                if i == 0: row, col = 0, 1
+                elif i == 1: row, col = 0, 2
+                elif i == 2: row, col = 1, 0
+                elif i == 3: row, col = 1, 1
+                else: row, col = 1, 2
                 
                 info = self.obtener_info_worker(worker, i)
-                self.crear_recuadro_worker(row, col, worker, info['funcion'], is_principal=False, worker_index=i)
+                self.crear_recuadro_cyber(row, col, worker, info['funcion'], is_principal=False, worker_index=i)
             
-            # Si no hay workers, mostrar mensaje
             if not self.workers:
-                msg = tk.Label(self.grid_frame, text="No hay workers activos", 
-                              font=("Arial", 12), fg="#7f8c8d", bg="#ecf0f1")
-                msg.grid(row=0, column=0, columnspan=3, pady=50)
-        
+                tk.Label(self.grid_frame, text="No secondary workers active", 
+                        font=("Segoe UI", 12), fg=THEME_FG_SEC, bg=THEME_BG).grid(row=0, column=1, columnspan=2, pady=50)
+                
         except Exception as e:
-            print(f"Error actualizando monitoreo: {e}")
-        
-        # Programar próxima actualización
+            print(f"Error updating monitor: {e}")
+            
         if self.running and self.window:
             self.window.after(1000, self.actualizar_monitoreo)
     
-    def crear_recuadro_worker(self, row, col, worker, funcion, is_principal=False, worker_index=None):
-        """Crea un recuadro para un worker en la posición row, col"""
-        # Frame principal del recuadro
-        worker_frame = tk.Frame(self.grid_frame, relief=tk.RAISED, bd=2, 
-                               bg="#ffffff", padx=10, pady=10)
-        worker_frame.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
+    def crear_recuadro_cyber(self, row, col, worker, funcion, is_principal=False, worker_index=None):
+        """Crea una 'Glass Card' para un worker"""
+        from config import THEME_BG, THEME_BG_SEC, THEME_FG, THEME_FG_SEC, UI_SUCCESS, UI_DANGER, UI_INFO, UI_WARNING, MODO_HILOS
         
-        # Configurar peso de columnas para que se expandan
+        # Color del borde/acento según estado/tipo
+        accent_color = UI_WARNING if is_principal else (UI_SUCCESS if self.modo == MODO_HILOS else UI_INFO)
+        
+        # Frame contenedor (Card)
+        card = tk.Frame(self.grid_frame, bg=THEME_BG_SEC, padx=2, pady=2) # Padding simula borde
+        card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
+        
+        # Efecto borde coloreado
+        card.configure(bg=accent_color) 
+        
+        # Contenido interno (Fondo oscuro)
+        inner = tk.Frame(card, bg="#1e293b", padx=15, pady=15)
+        inner.pack(fill=tk.BOTH, expand=True)
+
         self.grid_frame.columnconfigure(col, weight=1)
         self.grid_frame.rowconfigure(row, weight=1)
         
-        # Color de fondo según tipo
-        if is_principal:
-            bg_color = "#f39c12"  # Naranja para principal
-            border_color = "#e67e22"
-        elif self.modo == MODO_HILOS:
-            bg_color = "#d5f4e6"  # Verde claro para hilos
-            border_color = "#2ecc71"
-        else:
-            bg_color = "#d6eaf8"  # Azul claro para procesos
-            border_color = "#3498db"
+        # Icono y Título
+        icon = "👑" if is_principal else "⚙️"
         
-        # Frame interno con color
-        inner_frame = tk.Frame(worker_frame, bg=bg_color, relief=tk.SOLID, bd=2)
-        inner_frame.pack(fill=tk.BOTH, expand=True)
+        header_row = tk.Frame(inner, bg="#1e293b")
+        header_row.pack(fill=tk.X, pady=(0, 10))
         
-        # Título
-        titulo_text = f"🔹 {funcion}"
-        if not is_principal and worker and worker_index is not None:
-            info = self.obtener_info_worker(worker, worker_index)
-            titulo_text += f" ({info['tipo']})"
-        
-        titulo = tk.Label(inner_frame, text=titulo_text, 
-                         font=("Arial", 11, "bold"), 
-                         bg=bg_color, fg="#2c3e50")
-        titulo.pack(pady=(8, 5))
+        tk.Label(header_row, text=icon, font=("Segoe UI", 12), bg="#1e293b", fg="white").pack(side=tk.LEFT, padx=(0,5))
+        tk.Label(header_row, text=funcion, font=("Segoe UI", 10, "bold"), bg="#1e293b", fg=THEME_FG).pack(side=tk.LEFT)
         
         # Detalles
-        detalles_frame = tk.Frame(inner_frame, bg=bg_color)
-        detalles_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        details = tk.Frame(inner, bg="#1e293b")
+        details.pack(fill=tk.BOTH, expand=True)
         
+        def add_detail(lbl, val, val_color=THEME_FG_SEC):
+            row_d = tk.Frame(details, bg="#1e293b")
+            row_d.pack(fill=tk.X, pady=1)
+            tk.Label(row_d, text=lbl, font=("Segoe UI", 9), bg="#1e293b", fg="#64748b").pack(side=tk.LEFT)
+            tk.Label(row_d, text=val, font=("Segoe UI", 9, "bold"), bg="#1e293b", fg=val_color).pack(side=tk.RIGHT)
+
         if is_principal:
-            # Información del proceso principal
-            pid_principal = os.getpid()
-            tk.Label(detalles_frame, text=f"PID: {pid_principal}", 
-                    font=("Consolas", 10, "bold"), bg=bg_color, 
-                    fg="#2c3e50", anchor="w").pack(fill=tk.X, pady=3)
-            tk.Label(detalles_frame, text="Estado: ✅ Activo", 
-                    font=("Consolas", 9, "bold"), bg=bg_color, 
-                    fg="#27ae60", anchor="w").pack(fill=tk.X, pady=2)
+            pid = os.getpid()
+            add_detail("PID:", str(pid), THEME_FG)
+            add_detail("Status:", "ACTIVE", UI_SUCCESS)
         elif worker and worker_index is not None:
-            info = self.obtener_info_worker(worker, worker_index)
-            
-            if self.modo == MODO_HILOS:
-                tk.Label(detalles_frame, text=f"Thread ID: {info['id']}", 
-                        font=("Consolas", 9, "bold"), bg=bg_color, 
-                        fg="#2c3e50", anchor="w").pack(fill=tk.X, pady=2)
-                tk.Label(detalles_frame, text=f"PID: {info['pid']}", 
-                        font=("Consolas", 9), bg=bg_color, 
-                        fg="#7f8c8d", anchor="w").pack(fill=tk.X, pady=1)
-            else:
-                tk.Label(detalles_frame, text=f"Process ID: {info['id']}", 
-                        font=("Consolas", 9, "bold"), bg=bg_color, 
-                        fg="#2c3e50", anchor="w").pack(fill=tk.X, pady=2)
-                tk.Label(detalles_frame, text=f"PID: {info['pid']}", 
-                        font=("Consolas", 9), bg=bg_color, 
-                        fg="#7f8c8d", anchor="w").pack(fill=tk.X, pady=1)
-            
-            tk.Label(detalles_frame, text=f"Nombre: {info['nombre']}", 
-                    font=("Consolas", 8), bg=bg_color, 
-                    fg="#7f8c8d", anchor="w").pack(fill=tk.X, pady=1)
-            
-            estado_text = "✅ Vivo" if info['vivo'] else "❌ Muerto"
-            estado_color = "#27ae60" if info['vivo'] else "#e74c3c"
-            tk.Label(detalles_frame, text=f"Estado: {estado_text}", 
-                    font=("Consolas", 9, "bold"), bg=bg_color, 
-                    fg=estado_color, anchor="w").pack(fill=tk.X, pady=2)
-            
-            tk.Label(detalles_frame, text=f"Daemon: {'Sí' if info['daemon'] else 'No'}", 
-                    font=("Consolas", 8), bg=bg_color, 
-                    fg="#7f8c8d", anchor="w").pack(fill=tk.X, pady=1)
+             info = self.obtener_info_worker(worker, worker_index)
+             
+             w_id = info.get('id', 'N/A')
+             pid = info.get('pid', 'N/A')
+             alive = info.get('vivo', False)
+             
+             add_detail("ID:", str(w_id), THEME_FG)
+             add_detail("PID:", str(pid), THEME_FG)
+             add_detail("Status:", "RUNNING" if alive else "STOPPED", UI_SUCCESS if alive else UI_DANGER)
         
-        self.worker_frames[(row, col)] = worker_frame  # Actualizar cada segundo
+        self.worker_frames[(row, col)] = card
     
     def cerrar(self):
         """Cierra la ventana de monitoreo"""
