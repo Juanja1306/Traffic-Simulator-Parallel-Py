@@ -89,6 +89,16 @@ def ejecutar_simulacion(modo_elegido):
 
     eventos_inicio = {k: ManagerEvent() for k in ['N', 'S', 'E', 'O']}
     eventos_fin = {k: ManagerEvent() for k in ['N', 'S', 'E', 'O']}
+    
+    # Evento para activar ambulancia (compartido entre todos)
+    evento_ambulancia = ManagerEvent()
+    evento_ambulancia_activa = ManagerEvent()  # Indica si hay ambulancia activa
+    
+    # Dirección de la ambulancia - usar Value para procesos, dict para threads
+    if modo_elegido == MODO_PROCESOS:
+        direccion_ambulancia = multiprocessing.Value('c', b'N')
+    else:
+        direccion_ambulancia = {'value': 'N', 'lock': threading.Lock()}
 
     workers = []
     
@@ -96,7 +106,7 @@ def ejecutar_simulacion(modo_elegido):
     semaforos_ids = ['N', 'S', 'E', 'O']  # Debe coincidir con NUM_SEMAFOROS
     for sem_id in semaforos_ids:
         w = WorkerClass(target=tarea_semaforo, 
-                        args=(sem_id, eventos_inicio[sem_id], eventos_fin[sem_id], cola_gui, modo_elegido))
+                        args=(sem_id, eventos_inicio[sem_id], eventos_fin[sem_id], cola_gui, modo_elegido, evento_ambulancia, evento_ambulancia_activa, direccion_ambulancia))
         w.daemon = True
         w.start()
         workers.append(w)
@@ -104,7 +114,7 @@ def ejecutar_simulacion(modo_elegido):
     # Lanzar controlador (NUM_CONTROLADORES workers)
     for _ in range(NUM_CONTROLADORES):
         ctrl = WorkerClass(target=tarea_controlador, 
-                           args=(eventos_inicio, eventos_fin, cola_gui))
+                           args=(eventos_inicio, eventos_fin, cola_gui, evento_ambulancia, evento_ambulancia_activa, direccion_ambulancia))
         ctrl.daemon = True
         ctrl.start()
         workers.append(ctrl)
@@ -132,7 +142,7 @@ def ejecutar_simulacion(modo_elegido):
     
     # Lanzar GUI (Main Thread)
     root = tk.Tk()
-    app = TrafficApp(root, cola_gui, modo_elegido, workers)
+    app = TrafficApp(root, cola_gui, modo_elegido, workers, evento_ambulancia, evento_ambulancia_activa, direccion_ambulancia)
     root.mainloop()
     
     # Limpiar workers restantes si la ventana se cerró sin usar el botón

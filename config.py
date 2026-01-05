@@ -8,6 +8,7 @@ COLOR_CALLE = "#34495e"
 COLOR_LINEA = "#f1c40f"
 COLOR_AUTO_ESPERA = "#e74c3c"  # Rojo para autos esperando
 COLOR_AUTO_CRUZANDO = "#2ecc71" # Verde para autos moviéndose
+COLOR_AMBULANCIA = "#f39c12"    # Naranja para ambulancia
 
 # Coordenadas
 CENTRO_X, CENTRO_Y = ANCHO_VENTANA // 2, ALTO_VENTANA // 2

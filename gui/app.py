@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 from config import (
     ANCHO_VENTANA, ALTO_VENTANA, COLOR_FONDO, COLOR_CALLE, COLOR_LINEA,
-    COLOR_AUTO_ESPERA, COLOR_AUTO_CRUZANDO, CENTRO_X, CENTRO_Y,
+    COLOR_AUTO_ESPERA, COLOR_AUTO_CRUZANDO, COLOR_AMBULANCIA, CENTRO_X, CENTRO_Y,
     ANCHO_CALLE, OFFSET_SEMAFORO
 )
 from models import Estadisticas
@@ -14,11 +14,14 @@ from gui.monitor import MonitorPanel
 # ==========================================
 
 class TrafficApp:
-    def __init__(self, root, cola_comunicacion, modo=None, workers=None):
+    def __init__(self, root, cola_comunicacion, modo=None, workers=None, evento_ambulancia=None, evento_ambulancia_activa=None, direccion_ambulancia=None):
         self.root = root
         self.cola = cola_comunicacion
         self.modo = modo
         self.workers = workers or []
+        self.evento_ambulancia = evento_ambulancia
+        self.evento_ambulancia_activa = evento_ambulancia_activa
+        self.direccion_ambulancia = direccion_ambulancia
         self.root.title("Simulador de Tráfico Paralelo - UPS Cuenca")
         self.root.geometry("900x700")
         
@@ -28,6 +31,9 @@ class TrafficApp:
         # Estructuras para animación
         self.autos_animados = [] # Lista de autos moviéndose actualmente
         self.colas_graficas = {'N': [], 'S': [], 'E': [], 'O': []} # IDs de rectángulos en espera
+        self.ambulancia_activa = False
+        self.sirena_parpadeando = False
+        self.sirena_activa = False
         
         # Panel de monitoreo
         self.monitor_panel = None
@@ -70,6 +76,14 @@ class TrafficApp:
                                relief=tk.RAISED, bd=2,
                                command=self.abrir_monitoreo)
         btn_monitor.pack(side=tk.LEFT, padx=5)
+        
+        # Botón Ambulancia
+        self.btn_ambulancia = tk.Button(btn_frame, text="🚑 Ambulancia", 
+                                       font=("Arial", 9, "bold"),
+                                       bg="#f39c12", fg="white",
+                                       relief=tk.RAISED, bd=2,
+                                       command=self.activar_ambulancia)
+        self.btn_ambulancia.pack(side=tk.LEFT, padx=5)
         
         # Botón Volver atrás
         btn_volver = tk.Button(btn_frame, text="⬅️ Volver atrás", 
@@ -151,6 +165,20 @@ class TrafficApp:
                 
                 elif tipo == "FIN":
                     messagebox.showinfo("Fin", "Simulación Completada")
+                
+                elif tipo == "AMBULANCIA_CRUZANDO":
+                    _, id_sem = msg
+                    self.ambulancia_activa = True
+                    self.sirena_activa = True
+                    self.generar_ambulancia_cruzando(id_sem)
+                    self.iniciar_efecto_sirena()
+                
+                elif tipo == "AMBULANCIA_COMPLETADA":
+                    _, id_sem = msg
+                    self.ambulancia_activa = False
+                    self.sirena_activa = False
+                    self.detener_efecto_sirena()
+                    self.btn_ambulancia.config(state=tk.NORMAL)
                     
         except Exception:
             pass
@@ -231,7 +259,13 @@ class TrafficApp:
         por_eliminar = []
         
         for auto in self.autos_animados:
+            # Mover el rectángulo
             self.canvas.move(auto['id'], auto['vx'], auto['vy'])
+            
+            # Si es ambulancia, mover también el texto
+            if 'texto' in auto:
+                self.canvas.move(auto['texto'], auto['vx'], auto['vy'])
+            
             coords = self.canvas.coords(auto['id'])
             
             # Verificar si salió de la pantalla
@@ -242,6 +276,8 @@ class TrafficApp:
         # Limpieza
         for auto in por_eliminar:
             self.canvas.delete(auto['id'])
+            if 'texto' in auto:  # Si es ambulancia, eliminar también el texto
+                self.canvas.delete(auto['texto'])
             self.autos_animados.remove(auto)
         
         # Asegurar que todos los textos de semáforos siempre estén encima
@@ -261,6 +297,97 @@ class TrafficApp:
             # Si ya está abierto, traerlo al frente
             self.monitor_panel.window.lift()
             self.monitor_panel.window.focus_force()
+    
+    def activar_ambulancia(self):
+        """Activa una ambulancia desde una dirección aleatoria"""
+        import random
+        
+        if self.ambulancia_activa:
+            return  # Ya hay una ambulancia activa
+        
+        # Deshabilitar botón mientras la ambulancia está activa
+        self.btn_ambulancia.config(state=tk.DISABLED)
+        
+        # Seleccionar dirección aleatoria
+        direcciones = ['N', 'S', 'E', 'O']
+        direccion = random.choice(direcciones)
+        
+        # Establecer dirección en el objeto compartido
+        if self.direccion_ambulancia:
+            if hasattr(self.direccion_ambulancia, 'value'):  # Multiprocessing Value
+                self.direccion_ambulancia.value = direccion.encode() if isinstance(direccion, str) else direccion
+            elif isinstance(self.direccion_ambulancia, dict):  # Dict para threads
+                if 'lock' in self.direccion_ambulancia:
+                    with self.direccion_ambulancia['lock']:
+                        self.direccion_ambulancia['value'] = direccion
+                else:
+                    self.direccion_ambulancia['value'] = direccion
+        
+        # Activar eventos de ambulancia
+        if self.evento_ambulancia_activa:
+            self.evento_ambulancia_activa.set()
+        if self.evento_ambulancia:
+            self.evento_ambulancia.set()
+        
+        print(f"\n🚑 AMBULANCIA ACTIVADA desde dirección: {direccion}")
+    
+    def generar_ambulancia_cruzando(self, id_sem):
+        """Crea una ambulancia animada que cruza la intersección con prioridad"""
+        w, h = 25, 35  # Ambulancia más grande
+        vx, vy = 0, 0
+        
+        # Determinar posición inicial y velocidad según dirección
+        if id_sem == 'N': # Baja
+            x = CENTRO_X - ANCHO_CALLE/4
+            y = CENTRO_Y - ANCHO_CALLE/2 - 20
+            vx, vy = 0, 10  # Más rápida
+            rect = self.canvas.create_rectangle(x-12, y, x+12, y+h, fill=COLOR_AMBULANCIA, outline="white", width=2)
+        elif id_sem == 'S': # Sube
+            x = CENTRO_X + ANCHO_CALLE/4
+            y = CENTRO_Y + ANCHO_CALLE/2 + 20
+            vx, vy = 0, -10
+            rect = self.canvas.create_rectangle(x-12, y-h, x+12, y, fill=COLOR_AMBULANCIA, outline="white", width=2)
+        elif id_sem == 'E': # Va a izquierda
+            x = CENTRO_X + ANCHO_CALLE/2 + 20
+            y = CENTRO_Y - ANCHO_CALLE/4
+            vx, vy = -10, 0
+            rect = self.canvas.create_rectangle(x, y-12, x+h, y+12, fill=COLOR_AMBULANCIA, outline="white", width=2)
+        elif id_sem == 'O': # Va a derecha
+            x = CENTRO_X - ANCHO_CALLE/2 - 20
+            y = CENTRO_Y + ANCHO_CALLE/4
+            vx, vy = 10, 0
+            rect = self.canvas.create_rectangle(x-h, y-12, x, y+12, fill=COLOR_AMBULANCIA, outline="white", width=2)
+        
+        # Añadir texto "AMB" en la ambulancia
+        texto_amb = self.canvas.create_text(x, y, text="AMB", fill="white", font=("Arial", 8, "bold"))
+        
+        self.autos_animados.append({'id': rect, 'vx': vx, 'vy': vy, 'es_ambulancia': True, 'texto': texto_amb})
+    
+    def iniciar_efecto_sirena(self):
+        """Inicia el efecto visual de sirena parpadeando"""
+        self.sirena_parpadeando = True
+        self.parpadear_sirena()
+    
+    def parpadear_sirena(self):
+        """Efecto de parpadeo para simular sirena"""
+        if not self.sirena_activa or not self.sirena_parpadeando:
+            return
+        
+        # Cambiar color de fondo del canvas alternativamente
+        color_actual = self.canvas.cget("bg")
+        if color_actual == COLOR_FONDO:
+            self.canvas.config(bg="#ffeb3b")
+        else:
+            self.canvas.config(bg=COLOR_FONDO)
+        
+        # Continuar parpadeando
+        if self.sirena_parpadeando and self.sirena_activa:
+            self.root.after(200, self.parpadear_sirena)
+    
+    def detener_efecto_sirena(self):
+        """Detiene el efecto de sirena"""
+        self.sirena_parpadeando = False
+        self.canvas.config(bg=COLOR_FONDO)  # Restaurar color original
     
     def terminar_workers(self):
         """Termina todos los workers (procesos/hilos) de forma segura"""
