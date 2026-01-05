@@ -1,5 +1,13 @@
 import tkinter as tk
 from tkinter import messagebox
+import os
+
+# Intentar importar PIL, si no está disponible usar tkinter directamente
+try:
+    from PIL import Image, ImageTk
+    PIL_DISPONIBLE = True
+except ImportError:
+    PIL_DISPONIBLE = False
 from config import (
     ANCHO_VENTANA, ALTO_VENTANA, COLOR_FONDO, COLOR_CALLE, COLOR_LINEA,
     COLOR_AUTO_ESPERA, COLOR_AUTO_CRUZANDO, COLOR_AMBULANCIA, CENTRO_X, CENTRO_Y,
@@ -37,6 +45,9 @@ class TrafficApp:
         
         # Panel de monitoreo
         self.monitor_panel = None
+        
+        # Panel de vistas de imágenes
+        self.vista_imagenes_panel = None
         
         self.setup_ui()
         self.running = True
@@ -76,6 +87,14 @@ class TrafficApp:
                                relief=tk.RAISED, bd=2,
                                command=self.abrir_monitoreo)
         btn_monitor.pack(side=tk.LEFT, padx=5)
+        
+        # Botón para abrir vistas de imágenes
+        btn_vistas = tk.Button(btn_frame, text="🖼️ Vistas", 
+                              font=("Arial", 9, "bold"),
+                              bg="#9b59b6", fg="white",
+                              relief=tk.RAISED, bd=2,
+                              command=self.abrir_vistas)
+        btn_vistas.pack(side=tk.LEFT, padx=5)
         
         # Botón Ambulancia
         self.btn_ambulancia = tk.Button(btn_frame, text="🚑 Ambulancia", 
@@ -463,4 +482,299 @@ class TrafficApp:
         
         # Usar el mismo handler de cierre
         self.on_closing()
+    
+    def abrir_vistas(self):
+        """Abre el panel de vistas de imágenes"""
+        if self.vista_imagenes_panel is None or (self.vista_imagenes_panel.window is None or not self.vista_imagenes_panel.window.winfo_exists()):
+            self.vista_imagenes_panel = VistaImagenes(self.root)
+            self.vista_imagenes_panel.crear_ventana()
+        else:
+            # Si ya está abierto, traerlo al frente
+            self.vista_imagenes_panel.window.lift()
+            self.vista_imagenes_panel.window.focus_force()
+
+
+# ==========================================
+# PANEL DE VISTAS DE IMÁGENES
+# ==========================================
+
+class VistaImagenes:
+    """Panel para visualizar diferentes vistas de la intersección"""
+    
+    def __init__(self, parent):
+        self.parent = parent
+        self.window = None
+        self.imagen_actual = None
+        self.imagen_tk = None
+        self.imagen_pil_original = None  # Imagen PIL original para zoom
+        self.nivel_zoom = 1.0  # Nivel de zoom actual (1.0 = 100%)
+        
+        # Rutas de las imágenes
+        # Obtener la ruta del directorio raíz del proyecto
+        current_file = os.path.abspath(__file__)
+        gui_dir = os.path.dirname(current_file)
+        base_path = os.path.dirname(gui_dir)  # Subir un nivel desde gui/ al raíz
+        
+        images_dir = os.path.join(base_path, 'Images')
+        self.rutas_imagenes = {
+            'Norte': os.path.join(images_dir, 'Norte.png'),
+            'Sur': os.path.join(images_dir, 'Sur.png'),
+            'Este': os.path.join(images_dir, 'Este.png'),
+            'Oeste': os.path.join(images_dir, 'Oeste.png'),
+            'Aérea': os.path.join(images_dir, 'aerea.png')
+        }
+        
+        # Vista actual
+        self.vista_actual = 'Aérea'
+    
+    def crear_ventana(self):
+        """Crea la ventana de vistas"""
+        self.window = tk.Toplevel(self.parent)
+        self.window.title("Vistas de la Intersección")
+        self.window.geometry("1000x800")
+        self.window.protocol("WM_DELETE_WINDOW", self.cerrar)
+        
+        # Header
+        header = tk.Frame(self.window, bg="#2c3e50", pady=15)
+        header.pack(fill=tk.X)
+        
+        titulo = tk.Label(header, text="🖼️ Vistas de la Intersección", 
+                         font=("Arial", 16, "bold"), 
+                         bg="#2c3e50", fg="white")
+        titulo.pack()
+        
+        # Frame principal
+        main_frame = tk.Frame(self.window, bg="#ecf0f1")
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Frame para botones de selección
+        btn_frame = tk.Frame(main_frame, bg="#ecf0f1")
+        btn_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Crear botones para cada vista
+        self.botones_vista = {}
+        colores = {
+            'Norte': '#3498db',
+            'Sur': '#2ecc71',
+            'Este': '#e74c3c',
+            'Oeste': '#f39c12',
+            'Aérea': '#9b59b6'
+        }
+        
+        for vista in ['Norte', 'Sur', 'Este', 'Oeste', 'Aérea']:
+            btn = tk.Button(btn_frame, text=vista,
+                          font=("Arial", 10, "bold"),
+                          bg=colores.get(vista, '#95a5a6'),
+                          fg="white",
+                          relief=tk.RAISED, bd=2,
+                          width=12,
+                          command=lambda v=vista: self.cambiar_vista(v))
+            btn.pack(side=tk.LEFT, padx=5)
+            self.botones_vista[vista] = btn
+        
+        # Frame para controles de zoom
+        zoom_frame = tk.Frame(main_frame, bg="#ecf0f1")
+        zoom_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Botón Zoom Out
+        btn_zoom_out = tk.Button(zoom_frame, text="➖ Zoom Out",
+                                font=("Arial", 9, "bold"),
+                                bg="#e74c3c", fg="white",
+                                relief=tk.RAISED, bd=2,
+                                command=self.zoom_out)
+        btn_zoom_out.pack(side=tk.LEFT, padx=5)
+        
+        # Botón Reset Zoom
+        btn_zoom_reset = tk.Button(zoom_frame, text="🔄 Reset",
+                                  font=("Arial", 9, "bold"),
+                                  bg="#95a5a6", fg="white",
+                                  relief=tk.RAISED, bd=2,
+                                  command=self.zoom_reset)
+        btn_zoom_reset.pack(side=tk.LEFT, padx=5)
+        
+        # Botón Zoom In
+        btn_zoom_in = tk.Button(zoom_frame, text="➕ Zoom In",
+                               font=("Arial", 9, "bold"),
+                               bg="#2ecc71", fg="white",
+                               relief=tk.RAISED, bd=2,
+                               command=self.zoom_in)
+        btn_zoom_in.pack(side=tk.LEFT, padx=5)
+        
+        # Label para mostrar nivel de zoom
+        self.label_zoom = tk.Label(zoom_frame, text="Zoom: 100%",
+                                  font=("Arial", 9),
+                                  bg="#ecf0f1", fg="#2c3e50")
+        self.label_zoom.pack(side=tk.LEFT, padx=15)
+        
+        # Frame para la imagen con scroll
+        canvas_frame = tk.Frame(main_frame, bg="#ecf0f1")
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Canvas con scrollbars
+        scrollbar_v = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
+        scrollbar_h = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL)
+        
+        self.canvas = tk.Canvas(canvas_frame, 
+                               bg="#ffffff",
+                               yscrollcommand=scrollbar_v.set,
+                               xscrollcommand=scrollbar_h.set)
+        
+        scrollbar_v.config(command=self.canvas.yview)
+        scrollbar_h.config(command=self.canvas.xview)
+        
+        scrollbar_v.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_h.pack(side=tk.BOTTOM, fill=tk.X)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Bind eventos de rueda del mouse para zoom
+        self.canvas.bind("<MouseWheel>", self.on_mousewheel)
+        self.canvas.bind("<Button-4>", self.on_mousewheel)  # Linux
+        self.canvas.bind("<Button-5>", self.on_mousewheel)  # Linux
+        self.canvas.focus_set()  # Permitir que el canvas reciba eventos
+        
+        # Cargar imagen inicial
+        self.cargar_imagen(self.vista_actual)
+    
+    def cambiar_vista(self, vista):
+        """Cambia a la vista seleccionada"""
+        self.vista_actual = vista
+        self.nivel_zoom = 1.0  # Resetear zoom al cambiar vista
+        self.cargar_imagen(vista)
+        
+        # Actualizar apariencia de botones
+        for nombre, btn in self.botones_vista.items():
+            if nombre == vista:
+                btn.config(relief=tk.SUNKEN, state=tk.DISABLED)
+            else:
+                btn.config(relief=tk.RAISED, state=tk.NORMAL)
+    
+    def cargar_imagen(self, vista):
+        """Carga y muestra la imagen seleccionada"""
+        ruta = self.rutas_imagenes.get(vista)
+        
+        if not ruta or not os.path.exists(ruta):
+            # Mostrar mensaje de error
+            self.canvas.delete("all")
+            self.canvas.create_text(400, 300, 
+                                   text=f"Imagen no encontrada: {ruta}",
+                                   font=("Arial", 12),
+                                   fill="#e74c3c")
+            return
+        
+        try:
+            if PIL_DISPONIBLE:
+                # Cargar imagen con PIL (mejor calidad y redimensionamiento)
+                self.imagen_pil_original = Image.open(ruta)
+                
+                # Aplicar zoom inicial
+                self.aplicar_zoom()
+            else:
+                # Usar tkinter directamente (sin redimensionamiento ni zoom)
+                self.imagen_tk = tk.PhotoImage(file=ruta)
+                self.imagen_pil_original = None
+                self.mostrar_imagen()
+            
+        except Exception as e:
+            # Mostrar error
+            self.canvas.delete("all")
+            error_msg = f"Error al cargar imagen:\n{str(e)}"
+            if not PIL_DISPONIBLE:
+                error_msg += "\n\nNota: Se recomienda instalar Pillow para mejor soporte de imágenes:\npip install Pillow"
+            self.canvas.create_text(400, 300, 
+                                   text=error_msg,
+                                   font=("Arial", 12),
+                                   fill="#e74c3c",
+                                   justify=tk.CENTER)
+    
+    def aplicar_zoom(self):
+        """Aplica el nivel de zoom actual a la imagen"""
+        if not PIL_DISPONIBLE or not self.imagen_pil_original:
+            return
+        
+        # Obtener tamaño original
+        ancho_original, alto_original = self.imagen_pil_original.size
+        
+        # Calcular nuevo tamaño con zoom
+        nuevo_ancho = int(ancho_original * self.nivel_zoom)
+        nuevo_alto = int(alto_original * self.nivel_zoom)
+        
+        # Redimensionar imagen
+        imagen_redimensionada = self.imagen_pil_original.resize(
+            (nuevo_ancho, nuevo_alto), 
+            Image.Resampling.LANCZOS
+        )
+        
+        # Convertir a PhotoImage
+        self.imagen_tk = ImageTk.PhotoImage(imagen_redimensionada)
+        
+        # Mostrar imagen
+        self.mostrar_imagen()
+    
+    def mostrar_imagen(self):
+        """Muestra la imagen actual en el canvas"""
+        if not self.imagen_tk:
+            return
+        
+        # Limpiar canvas
+        self.canvas.delete("all")
+        
+        # Mostrar imagen centrada
+        x = max(400, self.imagen_tk.width() // 2 + 10)
+        y = max(350, self.imagen_tk.height() // 2 + 10)
+        
+        self.canvas.create_image(x, y, image=self.imagen_tk, anchor=tk.CENTER)
+        
+        # Configurar scroll region
+        self.canvas.config(scrollregion=self.canvas.bbox("all"))
+        
+        # Guardar referencia para evitar garbage collection
+        self.imagen_actual = self.imagen_tk
+        
+        # Actualizar label de zoom
+        self.actualizar_label_zoom()
+    
+    def zoom_in(self):
+        """Aumenta el nivel de zoom"""
+        if self.nivel_zoom < 5.0:  # Límite máximo de 500%
+            self.nivel_zoom = min(5.0, self.nivel_zoom * 1.2)
+            if PIL_DISPONIBLE and self.imagen_pil_original:
+                self.aplicar_zoom()
+            else:
+                self.actualizar_label_zoom()
+    
+    def zoom_out(self):
+        """Disminuye el nivel de zoom"""
+        if self.nivel_zoom > 0.1:  # Límite mínimo de 10%
+            self.nivel_zoom = max(0.1, self.nivel_zoom / 1.2)
+            if PIL_DISPONIBLE and self.imagen_pil_original:
+                self.aplicar_zoom()
+            else:
+                self.actualizar_label_zoom()
+    
+    def zoom_reset(self):
+        """Resetea el zoom a 100%"""
+        self.nivel_zoom = 1.0
+        if PIL_DISPONIBLE and self.imagen_pil_original:
+            self.aplicar_zoom()
+        else:
+            self.actualizar_label_zoom()
+    
+    def on_mousewheel(self, event):
+        """Maneja el evento de rueda del mouse para zoom"""
+        if event.delta > 0 or event.num == 4:  # Scroll hacia arriba
+            self.zoom_in()
+        elif event.delta < 0 or event.num == 5:  # Scroll hacia abajo
+            self.zoom_out()
+    
+    def actualizar_label_zoom(self):
+        """Actualiza el label que muestra el nivel de zoom"""
+        if self.label_zoom:
+            porcentaje = int(self.nivel_zoom * 100)
+            self.label_zoom.config(text=f"Zoom: {porcentaje}%")
+    
+    def cerrar(self):
+        """Cierra la ventana de vistas"""
+        if self.window:
+            self.window.destroy()
+            self.window = None
 
