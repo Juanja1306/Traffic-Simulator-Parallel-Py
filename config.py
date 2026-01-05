@@ -3,12 +3,19 @@
 # ==========================================
 ANCHO_VENTANA = 800
 ALTO_VENTANA = 600
-COLOR_FONDO = "#2c3e50"
-COLOR_CALLE = "#34495e"
-COLOR_LINEA = "#f1c40f"
-COLOR_AUTO_ESPERA = "#e74c3c"  # Rojo para autos esperando
-COLOR_AUTO_CRUZANDO = "#2ecc71" # Verde para autos moviéndose
-COLOR_AMBULANCIA = "#f39c12"    # Naranja para ambulancia
+COLOR_FONDO = "#212121"  # Fondo más oscuro, estilo dark mode moderno
+COLOR_CALLE = "#424242"  # Calles gris oscuro mate
+COLOR_LINEA = "#FFEB3B"  # Amarillo vibrante para líneas
+COLOR_AUTO_ESPERA = "#FF5252"  # Rojo coral vibrante
+COLOR_AUTO_CRUZANDO = "#69F0AE" # Verde menta neón
+COLOR_AMBULANCIA = "#FF9800"    # Naranja intenso
+
+# Colores Semáforo Moderno
+COLOR_SEMAFORO_CUERPO = "#000000"
+COLOR_LUZ_ROJA = "#FF1744"      # Rojo intenso
+COLOR_LUZ_AMARILLA = "#FFC107"  # Ámbar
+COLOR_LUZ_VERDE = "#00E676"     # Verde brillante
+COLOR_LUZ_OFF = "#333333"       # Gris oscuro para luz apagada
 
 # Coordenadas
 CENTRO_X, CENTRO_Y = ANCHO_VENTANA // 2, ALTO_VENTANA // 2

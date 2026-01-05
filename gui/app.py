@@ -11,7 +11,7 @@ except ImportError:
 from config import (
     ANCHO_VENTANA, ALTO_VENTANA, COLOR_FONDO, COLOR_CALLE, COLOR_LINEA,
     COLOR_AUTO_ESPERA, COLOR_AUTO_CRUZANDO, COLOR_AMBULANCIA, CENTRO_X, CENTRO_Y,
-    ANCHO_CALLE, OFFSET_SEMAFORO
+    ANCHO_CALLE, OFFSET_SEMAFORO, COLOR_SEMAFORO_CUERPO, COLOR_LUZ_OFF, COLOR_LUZ_ROJA
 )
 from models import Estadisticas
 from utils import obtener_info_sistema
@@ -117,19 +117,95 @@ class TrafficApp:
         self.canvas.pack(pady=10)
         self.dibujar_calles()
         
-        # Inicializar Semáforos Gráficos
+        # Inicializar Semáforos Gráficos (Diseño Moderno)
         self.sem_graficos = {}
+        # Ajustamos un poco las posiciones para que el cuerpo del semáforo no invada la calle
+        offset_visual = OFFSET_SEMAFORO + 15
         coords_sem = {
-            'N': (CENTRO_X, CENTRO_Y - OFFSET_SEMAFORO - 20),
-            'S': (CENTRO_X, CENTRO_Y + OFFSET_SEMAFORO + 20),
-            'E': (CENTRO_X + OFFSET_SEMAFORO + 20, CENTRO_Y),
-            'O': (CENTRO_X - OFFSET_SEMAFORO - 20, CENTRO_Y)
+            'N': (CENTRO_X, CENTRO_Y - offset_visual),
+            'S': (CENTRO_X, CENTRO_Y + offset_visual),
+            'E': (CENTRO_X + offset_visual, CENTRO_Y),
+            'O': (CENTRO_X - offset_visual, CENTRO_Y)
         }
         
+        from config import COLOR_SEMAFORO_CUERPO, COLOR_LUZ_OFF, COLOR_LUZ_ROJA
+        
         for k, (x, y) in coords_sem.items():
-            luz = self.canvas.create_oval(x-15, y-15, x+15, y+15, fill="red", outline="white", width=2)
-            txt = self.canvas.create_text(x, y-25 if k in ['N','E','O'] else y+25, text=f"{k}: 0", fill="white", font=("Arial", 10, "bold"))
-            self.sem_graficos[k] = {'luz': luz, 'txt': txt, 'pos': (x, y)}
+            # Crear grupo visual para el semáforo
+            wm, hm = 16, 40 # Ancho y alto medio del cuerpo
+            
+        for k, (x, y) in coords_sem.items():
+            # Crear semáforo realista con 3 luces
+            is_vertical = k in ['N', 'S']
+            
+            # Dimensiones del cuerpo (Vertical vs Horizontal)
+            # Ancho/Alto un poco más grande para albergar 3 luces de radio ~10-12
+            if is_vertical:
+                w_body, h_body = 34, 90
+            else:
+                w_body, h_body = 90, 34
+                
+            x1, y1 = x - w_body/2, y - h_body/2
+            x2, y2 = x + w_body/2, y + h_body/2
+            
+            # Cuerpo negro
+            body = self.canvas.create_rectangle(x1, y1, x2, y2, 
+                                              fill="#1a1a1a", outline="#444", width=2)
+            
+            # Configuración de luces
+            r_luz = 11  # Radio de la luz
+            spacing = 28 # Espaciado entre centros de luces
+            
+            # Definir posiciones relativas (dx, dy) según orientación
+            # Vertical: Rojo arriba, Amarillo centro, Verde abajo
+            # Horizontal: Rojo izquierda, Amarillo centro, Verde derecha
+            if is_vertical:
+                positions = {
+                    'red': (0, -spacing),
+                    'yellow': (0, 0),
+                    'green': (0, spacing)
+                }
+            else:
+                positions = {
+                    'red': (-spacing, 0),
+                    'yellow': (0, 0),
+                    'green': (spacing, 0)
+                }
+            
+            lights = {}
+            for color_key, (dx, dy) in positions.items():
+                cx, cy = x + dx, y + dy
+                # Crear luz apagada (COLOR_LUZ_OFF) con borde oscuro
+                l_obj = self.canvas.create_oval(cx - r_luz, cy - r_luz, cx + r_luz, cy + r_luz,
+                                              fill=COLOR_LUZ_OFF, outline="#000", width=1)
+                
+                # Efecto de "brillo" vítreo estático (opcional, pequeño reflejo blanco)
+                self.canvas.create_arc(cx - r_luz + 2, cy - r_luz + 2, cx + r_luz - 2, cy + r_luz - 2,
+                                     start=135, extent=90, style=tk.ARC, outline="#ffffff", width=1, state="hidden") # Por ahora simple
+                                     
+                lights[color_key] = l_obj
+
+            # Etiqueta de contador (Badge)
+            txt_offset_y = -60 if k in ['N', 'E', 'O'] else 60
+            if k in ['E', 'O']: txt_offset_y = -45
+            
+            # Fondo del texto
+            padding_txt = 15
+            txt_bg = self.canvas.create_rectangle(x-padding_txt, y+txt_offset_y-10, x+padding_txt, y+txt_offset_y+10,
+                                                fill="#37474f", outline="#cfd8dc", width=1)
+                                                
+            txt = self.canvas.create_text(x, y+txt_offset_y, text=f"{k}: 0", 
+                                        fill="white", font=("Roboto", 9, "bold"))
+            
+            # Guardamos referencias a todo
+            self.sem_graficos[k] = {
+                'body': body,
+                'luz_roja': lights['red'],
+                'luz_amarilla': lights['yellow'],
+                'luz_verde': lights['green'],
+                'txt': txt,
+                'txt_bg': txt_bg
+            }
 
         # Footer Stats
         self.lbl_stats = tk.Label(self.root, text="Esperando datos...", font=("Arial", 11), bg="#bdc3c7", pady=5)
@@ -162,13 +238,37 @@ class TrafficApp:
                 tipo = msg[0]
                 
                 if tipo == "UPDATE":
-                    _, id_sem, color, num_autos = msg
-                    self.canvas.itemconfig(self.sem_graficos[id_sem]['luz'], fill=color)
+                    from config import COLOR_LUZ_ROJA, COLOR_LUZ_AMARILLA, COLOR_LUZ_VERDE, COLOR_LUZ_OFF
+                    from models import EstadoSemaforo
+                    
+                    _, id_sem, estado_val, num_autos = msg
+                    
+                    # Mapear estado a activación de luces
+                    # Primero apagamos todas
+                    self.canvas.itemconfig(self.sem_graficos[id_sem]['luz_roja'], fill=COLOR_LUZ_OFF)
+                    self.canvas.itemconfig(self.sem_graficos[id_sem]['luz_amarilla'], fill=COLOR_LUZ_OFF)
+                    self.canvas.itemconfig(self.sem_graficos[id_sem]['luz_verde'], fill=COLOR_LUZ_OFF)
+                    
+                    # Encendemos la correspondiente
+                    if estado_val == EstadoSemaforo.ROJO.value:
+                        self.canvas.itemconfig(self.sem_graficos[id_sem]['luz_roja'], fill=COLOR_LUZ_ROJA)
+                    elif estado_val == EstadoSemaforo.AMARILLO.value:
+                        self.canvas.itemconfig(self.sem_graficos[id_sem]['luz_amarilla'], fill=COLOR_LUZ_AMARILLA)
+                    elif estado_val == EstadoSemaforo.VERDE.value:
+                        self.canvas.itemconfig(self.sem_graficos[id_sem]['luz_verde'], fill=COLOR_LUZ_VERDE)
+                        
                     self.canvas.itemconfig(self.sem_graficos[id_sem]['txt'], text=f"{id_sem}: {num_autos}")
+                    
                     self.actualizar_cola_visual(id_sem, num_autos)
-                    # Asegurar que el texto y la luz del semáforo siempre estén encima
-                    self.canvas.tag_raise(self.sem_graficos[id_sem]['txt'])
-                    self.canvas.tag_raise(self.sem_graficos[id_sem]['luz'])
+                    
+                    # Asegurar que el semáforo completo esté encima
+                    sg = self.sem_graficos[id_sem]
+                    self.canvas.tag_raise(sg['body'])
+                    self.canvas.tag_raise(sg['luz_roja'])
+                    self.canvas.tag_raise(sg['luz_amarilla'])
+                    self.canvas.tag_raise(sg['luz_verde'])
+                    self.canvas.tag_raise(sg['txt_bg'])
+                    self.canvas.tag_raise(sg['txt'])
                     
                 elif tipo == "ANIMACION_CRUCE":
                     _, id_sem = msg
@@ -240,9 +340,14 @@ class TrafficApp:
             
             self.colas_graficas[id_sem].append(rect)
         
-        # Asegurar que el texto y la luz del semáforo siempre estén encima de los autos
-        self.canvas.tag_raise(self.sem_graficos[id_sem]['txt'])
-        self.canvas.tag_raise(self.sem_graficos[id_sem]['luz'])
+        # Asegurar que el semáforo completo esté encima
+        sg = self.sem_graficos[id_sem]
+        self.canvas.tag_raise(sg['body'])
+        self.canvas.tag_raise(sg['luz_roja'])
+        self.canvas.tag_raise(sg['luz_amarilla'])
+        self.canvas.tag_raise(sg['luz_verde'])
+        self.canvas.tag_raise(sg['txt_bg'])
+        self.canvas.tag_raise(sg['txt'])
 
     def generar_auto_cruzando(self, id_sem):
         """Crea un auto animado que cruza la intersección"""
@@ -299,10 +404,14 @@ class TrafficApp:
                 self.canvas.delete(auto['texto'])
             self.autos_animados.remove(auto)
         
-        # Asegurar que todos los textos de semáforos siempre estén encima
-        for sem_id in self.sem_graficos:
-            self.canvas.tag_raise(self.sem_graficos[sem_id]['txt'])
-            self.canvas.tag_raise(self.sem_graficos[sem_id]['luz'])
+        # Asegurar que todos los semáforos siempre estén encima
+        for sem_id, sg in self.sem_graficos.items():
+            self.canvas.tag_raise(sg['body'])
+            self.canvas.tag_raise(sg['luz_roja'])
+            self.canvas.tag_raise(sg['luz_amarilla'])
+            self.canvas.tag_raise(sg['luz_verde'])
+            self.canvas.tag_raise(sg['txt_bg'])
+            self.canvas.tag_raise(sg['txt'])
             
         if self.running:
             self.root.after(30, self.bucle_animacion)
