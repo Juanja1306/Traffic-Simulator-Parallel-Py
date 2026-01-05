@@ -35,6 +35,9 @@ class TrafficApp:
         self.setup_ui()
         self.running = True
         
+        # Configurar handler para cierre de ventana
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
         # Iniciar bucles de la GUI
         self.procesar_mensajes()
         self.bucle_animacion()
@@ -56,13 +59,25 @@ class TrafficApp:
                        bg="#ecf0f1", font=("Consolas", 10))
         lbl.pack(side=tk.LEFT)
         
+        # Frame para botones del header
+        btn_frame = tk.Frame(header_content, bg="#ecf0f1")
+        btn_frame.pack(side=tk.RIGHT)
+        
         # Botón para abrir monitoreo
-        btn_monitor = tk.Button(header_content, text="📊 Monitoreo", 
+        btn_monitor = tk.Button(btn_frame, text="📊 Monitoreo", 
                                font=("Arial", 9, "bold"),
                                bg="#3498db", fg="white",
                                relief=tk.RAISED, bd=2,
                                command=self.abrir_monitoreo)
-        btn_monitor.pack(side=tk.RIGHT, padx=5)
+        btn_monitor.pack(side=tk.LEFT, padx=5)
+        
+        # Botón Volver atrás
+        btn_volver = tk.Button(btn_frame, text="⬅️ Volver atrás", 
+                              font=("Arial", 9, "bold"),
+                              bg="#e74c3c", fg="white",
+                              relief=tk.RAISED, bd=2,
+                              command=self.volver_atras)
+        btn_volver.pack(side=tk.LEFT, padx=5)
 
         # Canvas Principal
         self.canvas = tk.Canvas(self.root, width=ANCHO_VENTANA, height=ALTO_VENTANA, bg=COLOR_FONDO)
@@ -246,4 +261,79 @@ class TrafficApp:
             # Si ya está abierto, traerlo al frente
             self.monitor_panel.window.lift()
             self.monitor_panel.window.focus_force()
+    
+    def terminar_workers(self):
+        """Termina todos los workers (procesos/hilos) de forma segura"""
+        import multiprocessing
+        import threading
+        from config import MODO_PROCESOS
+        
+        if not self.workers:
+            return
+        
+        print(f"\n{'='*60}")
+        print("Terminando workers...")
+        print(f"{'='*60}")
+        
+        # Cerrar panel de monitoreo si está abierto
+        if self.monitor_panel and self.monitor_panel.window:
+            self.monitor_panel.cerrar()
+        
+        # Terminar cada worker
+        for i, worker in enumerate(self.workers):
+            try:
+                if worker.is_alive():
+                    if self.modo == MODO_PROCESOS:
+                        # Para procesos, usar terminate() que es más rápido
+                        if isinstance(worker, multiprocessing.Process):
+                            worker.terminate()
+                            print(f"  Worker {i+1} ({worker.name}): Proceso terminado")
+                    else:
+                        # Para hilos, no hay método directo de terminación
+                        # Los hilos daemon se terminarán cuando termine el proceso principal
+                        print(f"  Worker {i+1} ({worker.name}): Hilo daemon (se terminará automáticamente)")
+            except Exception as e:
+                print(f"  Error terminando worker {i+1}: {e}")
+        
+        # Esperar a que los procesos terminen (con timeout)
+        if self.modo == MODO_PROCESOS:
+            import time
+            for worker in self.workers:
+                if isinstance(worker, multiprocessing.Process) and worker.is_alive():
+                    try:
+                        worker.join(timeout=2.0)  # Esperar máximo 2 segundos
+                        if worker.is_alive():
+                            print(f"  Advertencia: Worker {worker.name} no terminó en el tiempo esperado")
+                    except Exception as e:
+                        print(f"  Error esperando worker: {e}")
+        
+        print(f"{'='*60}\n")
+        self.workers.clear()
+    
+    def on_closing(self):
+        """Maneja el cierre de la ventana (X o botón volver atrás)"""
+        # Detener bucles de la GUI
+        self.running = False
+        
+        # Terminar todos los workers
+        self.terminar_workers()
+        
+        # Cerrar ventana actual
+        self.root.quit()
+        self.root.destroy()
+    
+    def volver_atras(self):
+        """Vuelve a la ventana de selección de modo, terminando todos los workers"""
+        # Confirmar acción
+        respuesta = messagebox.askyesno(
+            "Volver atrás",
+            "¿Está seguro de que desea volver a la selección de modo?\n\n"
+            "Esto detendrá la simulación actual y todos los procesos/hilos activos."
+        )
+        
+        if not respuesta:
+            return
+        
+        # Usar el mismo handler de cierre
+        self.on_closing()
 

@@ -23,7 +23,15 @@ def seleccionar_modo():
     y = (root.winfo_screenheight() // 2) - (200 // 2)
     root.geometry(f"400x200+{x}+{y}")
     
-    modo_seleccionado = [MODO_PROCESOS]  # Usar lista para modificar desde dentro de funciones
+    modo_seleccionado = [None]  # Usar lista para modificar desde dentro de funciones
+    
+    # Manejar cierre de ventana
+    def on_closing():
+        modo_seleccionado[0] = None
+        root.quit()
+        root.destroy()
+    
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     
     # Frame principal
     frame = tk.Frame(root, padx=20, pady=20)
@@ -66,14 +74,8 @@ def seleccionar_modo():
     
     return modo_seleccionado[0]
 
-def main():
-    # Configurar multiprocessing para Windows
-    if sys.platform == 'win32':
-        multiprocessing.set_start_method('spawn', force=True)
-    
-    # Mostrar diálogo de selección de modo
-    modo_elegido = seleccionar_modo()
-    
+def ejecutar_simulacion(modo_elegido):
+    """Ejecuta la simulación con el modo seleccionado"""
     # Selección de estrategia de concurrencia
     if modo_elegido == MODO_PROCESOS:
         cola_gui = multiprocessing.Queue()
@@ -132,6 +134,35 @@ def main():
     root = tk.Tk()
     app = TrafficApp(root, cola_gui, modo_elegido, workers)
     root.mainloop()
+    
+    # Limpiar workers restantes si la ventana se cerró sin usar el botón
+    if workers:
+        print("\nLimpiando workers restantes...")
+        for worker in workers:
+            if worker.is_alive():
+                if modo_elegido == MODO_PROCESOS and isinstance(worker, multiprocessing.Process):
+                    worker.terminate()
+                # Los hilos daemon se terminarán automáticamente
+
+def main():
+    # Configurar multiprocessing para Windows
+    if sys.platform == 'win32':
+        multiprocessing.set_start_method('spawn', force=True)
+    
+    # Bucle principal: permite volver a seleccionar modo
+    while True:
+        # Mostrar diálogo de selección de modo
+        modo_elegido = seleccionar_modo()
+        
+        # Si el usuario cierra la ventana de selección sin elegir, salir
+        if modo_elegido is None:
+            break
+        
+        # Ejecutar simulación
+        ejecutar_simulacion(modo_elegido)
+        
+        # Después de cerrar la simulación, volver a mostrar selección
+        # (el bucle while se repite automáticamente)
 
 if __name__ == "__main__":
     main()
