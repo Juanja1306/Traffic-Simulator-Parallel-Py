@@ -16,6 +16,8 @@ from config import (
 from models import Estadisticas
 from utils import obtener_info_sistema
 from gui.monitor import MonitorPanel
+import platform
+import multiprocessing
 
 # ==========================================
 # GUI CON ANIMACIÓN DE AUTOS
@@ -60,176 +62,282 @@ class TrafficApp:
         self.bucle_animacion()
 
     def setup_ui(self):
-        # Header Info
-        header = tk.Frame(self.root, bg="#ecf0f1", pady=5)
-        header.pack(fill=tk.X)
+        # Importar tema y configuración nueva
+        from config import (THEME_BG, THEME_BG_SEC, THEME_FG, THEME_FG_SEC, THEME_ACCENT, 
+                          THEME_BORDER, CANVAS_ANCHO, CANVAS_ALTO, COLOR_SEMAFORO_CUERPO, 
+                          COLOR_LUZ_OFF, COLOR_LUZ_ROJA)
         
-        # Frame para info y botón
-        header_content = tk.Frame(header, bg="#ecf0f1")
-        header_content.pack(fill=tk.X, padx=10)
-        
-        info_text = (f"Modo: {self.info_sys['modo']} | "
-                    f"{self.info_sys['tipo_workers']}: {self.info_sys['num_workers']} | "
-                    f"Python: {self.info_sys['python_ver']} | "
-                    f"GIL: {self.info_sys['gil_status']}")
-        lbl = tk.Label(header_content, text=info_text, 
-                       bg="#ecf0f1", font=("Consolas", 10))
-        lbl.pack(side=tk.LEFT)
-        
-        # Frame para botones del header
-        btn_frame = tk.Frame(header_content, bg="#ecf0f1")
-        btn_frame.pack(side=tk.RIGHT)
-        
-        # Botón para abrir monitoreo
-        btn_monitor = tk.Button(btn_frame, text="📊 Monitoreo", 
-                               font=("Arial", 9, "bold"),
-                               bg="#3498db", fg="white",
-                               relief=tk.RAISED, bd=2,
-                               command=self.abrir_monitoreo)
-        btn_monitor.pack(side=tk.LEFT, padx=5)
-        
-        # Botón para abrir vistas de imágenes
-        btn_vistas = tk.Button(btn_frame, text="🖼️ Vistas", 
-                              font=("Arial", 9, "bold"),
-                              bg="#9b59b6", fg="white",
-                              relief=tk.RAISED, bd=2,
-                              command=self.abrir_vistas)
-        btn_vistas.pack(side=tk.LEFT, padx=5)
-        
-        # Botón Ambulancia
-        self.btn_ambulancia = tk.Button(btn_frame, text="🚑 Ambulancia", 
-                                       font=("Arial", 9, "bold"),
-                                       bg="#f39c12", fg="white",
-                                       relief=tk.RAISED, bd=2,
-                                       command=self.activar_ambulancia)
-        self.btn_ambulancia.pack(side=tk.LEFT, padx=5)
-        
-        # Botón Volver atrás
-        btn_volver = tk.Button(btn_frame, text="⬅️ Volver atrás", 
-                              font=("Arial", 9, "bold"),
-                              bg="#e74c3c", fg="white",
-                              relief=tk.RAISED, bd=2,
-                              command=self.volver_atras)
-        btn_volver.pack(side=tk.LEFT, padx=5)
+        self.root.configure(bg=THEME_BG)
+        # Centrar ventana en pantalla obligatoriamente
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x_c = int((screen_width/2) - (ANCHO_VENTANA/2))
+        y_c = int((screen_height/2) - (ALTO_VENTANA/2))
+        self.root.geometry(f"{ANCHO_VENTANA}x{ALTO_VENTANA}+{x_c}+{y_c}")
+        self.root.resizable(False, False)
+
+        # ==========================================
+        # LAYOUT PRINCIPAL (2 COLUMNAS)
+        # ==========================================
+        main_container = tk.Frame(self.root, bg=THEME_BG)
+        main_container.pack(fill=tk.BOTH, expand=True)
+
+        # ------------------------------------------
+        # COLUMNA IZQUIERDA: SIMULACIÓN (Canvas)
+        # ------------------------------------------
+        sim_frame = tk.Frame(main_container, bg=THEME_BG, width=CANVAS_ANCHO, height=CANVAS_ALTO)
+        sim_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sim_frame.pack_propagate(False)
 
         # Canvas Principal
-        self.canvas = tk.Canvas(self.root, width=ANCHO_VENTANA, height=ALTO_VENTANA, bg=COLOR_FONDO)
-        self.canvas.pack(pady=10)
+        self.canvas = tk.Canvas(sim_frame, width=CANVAS_ANCHO, height=CANVAS_ALTO, 
+                              bg=COLOR_FONDO, highlightthickness=0)
+        self.canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        
         self.dibujar_calles()
         
-        # Inicializar Semáforos Gráficos (Diseño Moderno)
+        # ------------------------------------------
+        # COLUMNA DERECHA: SIDEBAR (Panel de Control)
+        # ------------------------------------------
+        sidebar = tk.Frame(main_container, bg=THEME_BG_SEC, width=(ANCHO_VENTANA - CANVAS_ANCHO))
+        sidebar.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        sidebar.pack_propagate(False) 
+        
+        # Borde decorativo
+        tk.Frame(sidebar, bg=THEME_BORDER, width=2).pack(side=tk.LEFT, fill=tk.Y)
+        
+        # Contenido Sidebar
+        side_content = tk.Frame(sidebar, bg=THEME_BG_SEC, padx=20, pady=25)
+        side_content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # 1. Título
+        tk.Label(side_content, text="TRAFFIC\nCONTROLLER", justify=tk.LEFT,
+                font=("Segoe UI", 20, "bold"), bg=THEME_BG_SEC, fg=THEME_FG).pack(anchor="w", pady=(0, 20))
+
+        # 2. Info Sistema Expandida (Host Specs)
+        import platform
+        
+        info_card = tk.LabelFrame(side_content, text=" HOST SPECS ", font=("Segoe UI", 9, "bold"),
+                                bg=THEME_BG_SEC, fg=THEME_FG_SEC, bd=1, relief=tk.SOLID)
+        info_card.pack(fill=tk.X, pady=(0, 20), ipady=5)
+        
+        def add_info_row(parent, label, value, color_val=THEME_ACCENT):
+            row = tk.Frame(parent, bg=THEME_BG_SEC, pady=1)
+            row.pack(fill=tk.X, padx=10)
+            tk.Label(row, text=label, font=("Segoe UI", 8), bg=THEME_BG_SEC, fg=THEME_FG_SEC).pack(side=tk.LEFT)
+            tk.Label(row, text=value, font=("Segoe UI", 8, "bold"), bg=THEME_BG_SEC, fg=color_val).pack(side=tk.RIGHT)
+
+        # Obtener datos reales del Host (Linux)
+        uname = platform.uname()
+        cpu_model = "Unknown"
+        ram_total = "Unknown"
+        
+        try:
+            # Obtener Modelo de CPU detallado
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if "model name" in line:
+                        cpu_model = line.split(":")[1].strip()
+                        # Limpiar un poco el string si es muy largo
+                        cpu_model = cpu_model.replace("Intel(R) Core(TM) ", "")
+                        cpu_model = cpu_model.replace("CPU @", "@")
+                        break
+            
+            # Obtener RAM Total
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    if "MemTotal" in line:
+                        # Formato: MemTotal:        16316548 kB
+                        parts = line.split()
+                        kb_val = int(parts[1])
+                        gb_val = kb_val / (1024 * 1024)
+                        ram_total = f"{gb_val:.1f} GB"
+                        break
+        except:
+            # Fallback simple si no estamos en Linux o falla lectura
+            cpu_model = platform.machine()
+            ram_total = "N/A"
+
+        cores = multiprocessing.cpu_count()
+        
+        # Mostrar datos en el Sidebar
+        add_info_row(info_card, "OS:", uname.system)
+        add_info_row(info_card, "CPU:", cpu_model) # Modelo exacto
+        add_info_row(info_card, "RAM:", ram_total) # RAM Dinámica
+        add_info_row(info_card, "Cores:", str(cores))
+        add_info_row(info_card, "Mode:", self.info_sys['modo'], "#00E676")
+        add_info_row(info_card, "GIL:", "OFF" if "Free" in self.info_sys['gil_status'] else "ON", 
+                     "#10b981" if "Free" in self.info_sys['gil_status'] else "#f59e0b")
+
+        # 3. KPIs
+        stats_frame = tk.Frame(side_content, bg=THEME_BG_SEC)
+        stats_frame.pack(fill=tk.X, pady=(0, 30))
+        tk.Label(stats_frame, text="LIVE STATISTICS", font=("Segoe UI", 8, "bold"), bg=THEME_BG_SEC, fg=THEME_FG_SEC).pack(anchor="w", pady=(0, 5))
+        
+        self.sv_kpi_autos = tk.StringVar(value="0")
+        self.sv_kpi_tiempo = tk.StringVar(value="0.0s")
+        
+        def create_kpi(parent, title, var):
+            f = tk.Frame(parent, bg="#1e293b", padx=10, pady=10)
+            f.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2)
+            tk.Label(f, text=title, font=("Segoe UI", 8), bg="#1e293b", fg=THEME_FG_SEC).pack(anchor="w")
+            tk.Label(f, textvariable=var, font=("Segoe UI", 18, "bold"), bg="#1e293b", fg=THEME_FG).pack(anchor="w")
+        
+        grid_stats = tk.Frame(stats_frame, bg=THEME_BG_SEC)
+        grid_stats.pack(fill=tk.X)
+        create_kpi(grid_stats, "VEHICLES", self.sv_kpi_autos)
+        create_kpi(grid_stats, "WAIT TIME", self.sv_kpi_tiempo)
+
+        # 4. Controls (Iconos ASCII)
+        tk.Label(side_content, text="CONTROLS", font=("Segoe UI", 8, "bold"), bg=THEME_BG_SEC, fg=THEME_FG_SEC).pack(anchor="w", pady=(0, 10))
+        
+        def crear_boton_sidebar(parent, text, bg_color, cmd, icon=""):
+            # Icon ahora es texto plano seguro
+            btn = tk.Button(parent, text=f"{icon} {text}", font=("Segoe UI", 10, "bold"),
+                           bg=bg_color, fg="white", activebackground="white", activeforeground=bg_color,
+                           relief=tk.FLAT, bd=0, cursor="hand2", height=2, command=cmd)
+            btn.pack(fill=tk.X, pady=5)
+            # Hover
+            def on_enter(e): btn['bg'] = "#334155" if bg_color == THEME_BG_SEC else "#ffffff"; btn['fg'] = bg_color if bg_color != THEME_BG_SEC else "white"
+            def on_leave(e): btn['bg'] = bg_color; btn['fg'] = "white"
+            btn.bind("<Enter>", on_enter); btn.bind("<Leave>", on_leave)
+            return btn
+
+        crear_boton_sidebar(side_content, "MONITOR PANEL", "#0ea5e9", self.abrir_monitoreo, "[M]")
+        crear_boton_sidebar(side_content, "CAMERA VIEWS", "#8b5cf6", self.abrir_vistas, "[O]")
+        self.btn_ambulancia = crear_boton_sidebar(side_content, "DISPATCH AMBULANCE", "#f59e0b", self.activar_ambulancia, "(+)")
+        tk.Frame(side_content, bg=THEME_BG_SEC).pack(fill=tk.BOTH, expand=True) # Spacer
+        crear_boton_sidebar(side_content, "EXIT SIMULATION", "#ef4444", self.volver_atras, "[X]")
+
+        # ------------------------------------------
+        # SEMÁFOROS (Lógica Visual)
+        # ------------------------------------------
         self.sem_graficos = {}
-        # Ajustamos un poco las posiciones para que el cuerpo del semáforo no invada la calle
         offset_visual = OFFSET_SEMAFORO + 15
-        coords_sem = {
-            'N': (CENTRO_X, CENTRO_Y - offset_visual),
-            'S': (CENTRO_X, CENTRO_Y + offset_visual),
-            'E': (CENTRO_X + offset_visual, CENTRO_Y),
-            'O': (CENTRO_X - offset_visual, CENTRO_Y)
-        }
-        
-        from config import COLOR_SEMAFORO_CUERPO, COLOR_LUZ_OFF, COLOR_LUZ_ROJA
+        coords_sem = {'N': (CENTRO_X, CENTRO_Y - offset_visual), 'S': (CENTRO_X, CENTRO_Y + offset_visual),
+                      'E': (CENTRO_X + offset_visual, CENTRO_Y), 'O': (CENTRO_X - offset_visual, CENTRO_Y)}
         
         for k, (x, y) in coords_sem.items():
-            # Crear grupo visual para el semáforo
-            wm, hm = 16, 40 # Ancho y alto medio del cuerpo
-            
-        for k, (x, y) in coords_sem.items():
-            # Crear semáforo realista con 3 luces
             is_vertical = k in ['N', 'S']
-            
-            # Dimensiones del cuerpo (Vertical vs Horizontal)
-            # Ancho/Alto un poco más grande para albergar 3 luces de radio ~10-12
-            if is_vertical:
-                w_body, h_body = 34, 90
-            else:
-                w_body, h_body = 90, 34
-                
+            w_body, h_body = (34, 90) if is_vertical else (90, 34)
             x1, y1 = x - w_body/2, y - h_body/2
             x2, y2 = x + w_body/2, y + h_body/2
             
-            # Cuerpo negro
-            body = self.canvas.create_rectangle(x1, y1, x2, y2, 
-                                              fill="#1a1a1a", outline="#444", width=2)
+            body = self.canvas.create_rectangle(x1, y1, x2, y2, fill="#1a1a1a", outline="#444", width=2)
             
-            # Configuración de luces
-            r_luz = 11  # Radio de la luz
-            spacing = 28 # Espaciado entre centros de luces
-            
-            # Definir posiciones relativas (dx, dy) según orientación
-            # Vertical: Rojo arriba, Amarillo centro, Verde abajo
-            # Horizontal: Rojo izquierda, Amarillo centro, Verde derecha
-            if is_vertical:
-                positions = {
-                    'red': (0, -spacing),
-                    'yellow': (0, 0),
-                    'green': (0, spacing)
-                }
-            else:
-                positions = {
-                    'red': (-spacing, 0),
-                    'yellow': (0, 0),
-                    'green': (spacing, 0)
-                }
+            r_luz, spacing = 11, 28
+            positions = {'red': (0, -spacing), 'yellow': (0, 0), 'green': (0, spacing)} if is_vertical else \
+                        {'red': (-spacing, 0), 'yellow': (0, 0), 'green': (spacing, 0)}
             
             lights = {}
             for color_key, (dx, dy) in positions.items():
                 cx, cy = x + dx, y + dy
-                # Crear luz apagada (COLOR_LUZ_OFF) con borde oscuro
-                l_obj = self.canvas.create_oval(cx - r_luz, cy - r_luz, cx + r_luz, cy + r_luz,
-                                              fill=COLOR_LUZ_OFF, outline="#000", width=1)
-                
-                # Efecto de "brillo" vítreo estático (opcional, pequeño reflejo blanco)
-                self.canvas.create_arc(cx - r_luz + 2, cy - r_luz + 2, cx + r_luz - 2, cy + r_luz - 2,
-                                     start=135, extent=90, style=tk.ARC, outline="#ffffff", width=1, state="hidden") # Por ahora simple
-                                     
+                l_obj = self.canvas.create_oval(cx - r_luz, cy - r_luz, cx + r_luz, cy + r_luz, fill=COLOR_LUZ_OFF, outline="#000", width=1)
+                self.canvas.create_arc(cx - r_luz + 2, cy - r_luz + 2, cx + r_luz - 2, cy + r_luz - 2, start=135, extent=90, style=tk.ARC, outline="#ffffff", width=1, state="hidden")
                 lights[color_key] = l_obj
 
-            # Etiqueta de contador (Badge)
             txt_offset_y = -60 if k in ['N', 'E', 'O'] else 60
             if k in ['E', 'O']: txt_offset_y = -45
-            
-            # Fondo del texto
             padding_txt = 15
-            txt_bg = self.canvas.create_rectangle(x-padding_txt, y+txt_offset_y-10, x+padding_txt, y+txt_offset_y+10,
-                                                fill="#37474f", outline="#cfd8dc", width=1)
-                                                
-            txt = self.canvas.create_text(x, y+txt_offset_y, text=f"{k}: 0", 
-                                        fill="white", font=("Roboto", 9, "bold"))
+            txt_bg = self.canvas.create_rectangle(x-padding_txt, y+txt_offset_y-10, x+padding_txt, y+txt_offset_y+10, fill="#37474f", outline="#cfd8dc", width=1)
+            txt = self.canvas.create_text(x, y+txt_offset_y, text=f"{k}: 0", fill="white", font=("Roboto", 9, "bold"))
             
-            # Guardamos referencias a todo
-            self.sem_graficos[k] = {
-                'body': body,
-                'luz_roja': lights['red'],
-                'luz_amarilla': lights['yellow'],
-                'luz_verde': lights['green'],
-                'txt': txt,
-                'txt_bg': txt_bg
-            }
-
-        # Footer Stats
-        self.lbl_stats = tk.Label(self.root, text="Esperando datos...", font=("Arial", 11), bg="#bdc3c7", pady=5)
-        self.lbl_stats.pack(fill=tk.X, side=tk.BOTTOM)
+            self.sem_graficos[k] = {'body': body, 'luz_roja': lights['red'], 'luz_amarilla': lights['yellow'], 
+                                  'luz_verde': lights['green'], 'txt': txt, 'txt_bg': txt_bg}
 
     def dibujar_calles(self):
-        # Calles
+        # Calles (Usan COLOR_CALLE actualizado = asfalto azulado)
         self.canvas.create_rectangle(CENTRO_X - ANCHO_CALLE/2, 0, CENTRO_X + ANCHO_CALLE/2, ALTO_VENTANA, fill=COLOR_CALLE, outline="")
         self.canvas.create_rectangle(0, CENTRO_Y - ANCHO_CALLE/2, ANCHO_VENTANA, CENTRO_Y + ANCHO_CALLE/2, fill=COLOR_CALLE, outline="")
         
-        # Líneas centrales
-        self.canvas.create_line(CENTRO_X, 0, CENTRO_X, ALTO_VENTANA, fill=COLOR_LINEA, dash=(15, 10))
-        self.canvas.create_line(0, CENTRO_Y, ANCHO_VENTANA, CENTRO_Y, fill=COLOR_LINEA, dash=(15, 10))
+        # Líneas centrales (Amarillo Neón)
+        self.canvas.create_line(CENTRO_X, 0, CENTRO_X, ALTO_VENTANA, fill=COLOR_LINEA, width=2, dash=(20, 20))
+        self.canvas.create_line(0, CENTRO_Y, ANCHO_VENTANA, CENTRO_Y, fill=COLOR_LINEA, width=2, dash=(20, 20))
         
-        # Líneas de parada (Stop lines)
+        # Líneas de parada (Stop lines - Blanco brillante)
         stop_offset = ANCHO_CALLE/2 + 10
         # Norte
-        self.canvas.create_line(CENTRO_X, CENTRO_Y - stop_offset, CENTRO_X - ANCHO_CALLE/2, CENTRO_Y - stop_offset, fill="white", width=3)
+        self.canvas.create_line(CENTRO_X, CENTRO_Y - stop_offset, CENTRO_X - ANCHO_CALLE/2, CENTRO_Y - stop_offset, fill="#ffffff", width=4)
         # Sur
-        self.canvas.create_line(CENTRO_X, CENTRO_Y + stop_offset, CENTRO_X + ANCHO_CALLE/2, CENTRO_Y + stop_offset, fill="white", width=3)
+        self.canvas.create_line(CENTRO_X, CENTRO_Y + stop_offset, CENTRO_X + ANCHO_CALLE/2, CENTRO_Y + stop_offset, fill="#ffffff", width=4)
         # Este
-        self.canvas.create_line(CENTRO_X + stop_offset, CENTRO_Y, CENTRO_X + stop_offset, CENTRO_Y - ANCHO_CALLE/2, fill="white", width=3)
+        self.canvas.create_line(CENTRO_X + stop_offset, CENTRO_Y, CENTRO_X + stop_offset, CENTRO_Y - ANCHO_CALLE/2, fill="#ffffff", width=4)
         # Oeste
-        self.canvas.create_line(CENTRO_X - stop_offset, CENTRO_Y, CENTRO_X - stop_offset, CENTRO_Y + ANCHO_CALLE/2, fill="white", width=3)
+        self.canvas.create_line(CENTRO_X - stop_offset, CENTRO_Y, CENTRO_X - stop_offset, CENTRO_Y + ANCHO_CALLE/2, fill="#ffffff", width=4)
+
+    def crear_vehiculo_visual(self, x, y, w, h, color, direccion, tag):
+        """
+        Dibuja un vehículo detallado (estilo Top-Down) y agrupa los elementos bajo un tag.
+        Dirección: 'N' (mira abajo), 'S' (mira arriba), 'E' (mira izq), 'O' (mira der)
+        Nota: La dirección es hacia dónde apunta el frente del auto.
+        """
+        # Coordenadas bounding box
+        x1, y1 = x - w/2, y - h/2
+        x2, y2 = x + w/2, y + h/2
+        
+        # 1. Sombra (pequeño offset)
+        # Tkinter no soporta HEX con Alpha (#RRGGBBAA). Usamos un gris oscuro sólido para simular sombra.
+        self.canvas.create_oval(x1+2, y1+2, x2+2, y2+2, fill="#1a1a1a", outline="", tags=tag)
+        # Mejor usamos stipple para semi-transparencia si fuera necesario, pero gris oscuro plano (sombra sólida) está bien para estilo flat
+        self.canvas.create_rectangle(x1+3, y1+3, x2+3, y2+3, fill="#111", outline="", tags=tag) # Sombra simple
+        
+        # 2. Carrocería
+        # Usamos polygon para esquinas redondeadas simuladas o simplemente rect
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="#2c3e50", width=1, tags=tag)
+        
+        # Colores de detalles
+        glass_color = "#34495e" # Vidrios oscuros
+        headlight_color = "#f1c40f" # Faros amarillos
+        taillight_color = "#e74c3c" # Luces rojas
+        
+        # 3. Detalles según orientación
+        if direccion in ['N', 'S']: # Vertical
+            # Techo (Roof) - simula parabrisas y luneta trasera dejando huecos
+            roof_margin_y = h * 0.25
+            roof_margin_x = 2
+            self.canvas.create_rectangle(x1+roof_margin_x, y1+roof_margin_y, x2-roof_margin_x, y2-roof_margin_y, 
+                                       fill=color, outline=glass_color, width=2, tags=tag)
+            
+            # Faros
+            fw, fh = 4, 3 # Dimensión faros
+            if direccion == 'N': # Mira ABAJO
+                # Delanteros (Abajo)
+                self.canvas.create_rectangle(x1+2, y2-fh, x1+2+fw, y2, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y2-fh, x2-2, y2, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Arriba)
+                self.canvas.create_rectangle(x1+2, y1, x1+2+fw, y1+fh, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y1, x2-2, y1+fh, fill=taillight_color, outline="", tags=tag)
+            else: # Mira ARRIBA
+                # Delanteros (Arriba)
+                self.canvas.create_rectangle(x1+2, y1, x1+2+fw, y1+fh, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y1, x2-2, y1+fh, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Abajo)
+                self.canvas.create_rectangle(x1+2, y2-fh, x1+2+fw, y2, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-2-fw, y2-fh, x2-2, y2, fill=taillight_color, outline="", tags=tag)
+                
+        else: # Horizontal
+            # Techo
+            roof_margin_x = w * 0.25
+            roof_margin_y = 2
+            self.canvas.create_rectangle(x1+roof_margin_x, y1+roof_margin_y, x2-roof_margin_x, y2-roof_margin_y, 
+                                       fill=color, outline=glass_color, width=2, tags=tag)
+            
+            # Faros
+            fw, fh = 3, 4
+            if direccion == 'E': # Mira IZQUIERDA (<--)
+                # Delanteros (Izq)
+                self.canvas.create_rectangle(x1, y1+2, x1+fw, y1+2+fh, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x1, y2-2-fh, x1+fw, y2-2, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Der)
+                self.canvas.create_rectangle(x2-fw, y1+2, x2, y1+2+fh, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-fw, y2-2-fh, x2, y2-2, fill=taillight_color, outline="", tags=tag)
+            else: # Mira DERECHA (-->)
+                # Delanteros (Der)
+                self.canvas.create_rectangle(x2-fw, y1+2, x2, y1+2+fh, fill=headlight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x2-fw, y2-2-fh, x2, y2-2, fill=headlight_color, outline="", tags=tag)
+                # Traseros (Izq)
+                self.canvas.create_rectangle(x1, y1+2, x1+fw, y1+2+fh, fill=taillight_color, outline="", tags=tag)
+                self.canvas.create_rectangle(x1, y2-2-fh, x1+fw, y2-2, fill=taillight_color, outline="", tags=tag)
 
     def procesar_mensajes(self):
         try:
@@ -276,8 +384,12 @@ class TrafficApp:
                     
                 elif tipo == "STATS":
                     self.stats.registrar_cruce(msg[1])
-                    prom = self.stats.tiempo_total_espera / self.stats.total_vehiculos
-                    self.lbl_stats.config(text=f"Total Autos: {self.stats.total_vehiculos} | Tiempo Espera Promedio: {prom:.2f}s | Ciclo Actual")
+                    prom = self.stats.tiempo_total_espera / self.stats.total_vehiculos if self.stats.total_vehiculos > 0 else 0
+                    
+                    # Actualizar KPIs del Sidebar
+                    self.sv_kpi_autos.set(f"{self.stats.total_vehiculos}")
+                    self.sv_kpi_tiempo.set(f"{prom:.1f}s")
+                    # self.lbl_stats.config(text=...) # Eliminado (Label antiguo)
 
                 elif tipo == "CICLO":
                     self.root.title(f"Simulador de Tráfico - Ciclo {msg[1]}")
@@ -308,37 +420,43 @@ class TrafficApp:
     def actualizar_cola_visual(self, id_sem, cantidad):
         """Dibuja rectángulos estáticos representando la cola de espera"""
         # Limpiar cola anterior
-        for item in self.colas_graficas[id_sem]:
-            self.canvas.delete(item)
+        for tag in self.colas_graficas[id_sem]:
+            self.canvas.delete(tag)
         self.colas_graficas[id_sem] = []
         
         # Parámetros de dibujo
-        w_auto, h_auto = 20, 30
-        gap = 5
+        w_auto, h_auto = 22, 36  # Un poco más grandes y proporcionales
+        gap = 8
         stop_dist = ANCHO_CALLE/2 + 15
         
         # Limitar visualización a 10 autos para no saturar
         cantidad_visible = min(cantidad, 12)
         
         for i in range(cantidad_visible):
-            if id_sem == 'N': # Cola hacia arriba
-                x = CENTRO_X - ANCHO_CALLE/4
-                y = (CENTRO_Y - stop_dist) - (i * (h_auto + gap)) - h_auto
-                rect = self.canvas.create_rectangle(x-10, y, x+10, y+h_auto, fill=COLOR_AUTO_ESPERA, outline="black")
-            elif id_sem == 'S': # Cola hacia abajo
-                x = CENTRO_X + ANCHO_CALLE/4
-                y = (CENTRO_Y + stop_dist) + (i * (h_auto + gap))
-                rect = self.canvas.create_rectangle(x-10, y, x+10, y+h_auto, fill=COLOR_AUTO_ESPERA, outline="black")
-            elif id_sem == 'E': # Cola hacia derecha
-                x = (CENTRO_X + stop_dist) + (i * (h_auto + gap))
-                y = CENTRO_Y - ANCHO_CALLE/4
-                rect = self.canvas.create_rectangle(x, y-10, x+h_auto, y+10, fill=COLOR_AUTO_ESPERA, outline="black")
-            elif id_sem == 'O': # Cola hacia izquierda
-                x = (CENTRO_X - stop_dist) - (i * (h_auto + gap)) - h_auto
-                y = CENTRO_Y + ANCHO_CALLE/4
-                rect = self.canvas.create_rectangle(x, y-10, x+h_auto, y+10, fill=COLOR_AUTO_ESPERA, outline="black")
+            tag = f"cola_{id_sem}_{i}" # Tag único para este auto
             
-            self.colas_graficas[id_sem].append(rect)
+            if id_sem == 'N': # Cola hacia arriba, miran hacia ABAJO ('N')
+                x = CENTRO_X - ANCHO_CALLE/4
+                y = (CENTRO_Y - stop_dist) - (i * (h_auto + gap)) - h_auto/2
+                self.crear_vehiculo_visual(x, y, w_auto, h_auto, COLOR_AUTO_ESPERA, 'N', tag)
+                
+            elif id_sem == 'S': # Cola hacia abajo, miran hacia ARRIBA ('S')
+                x = CENTRO_X + ANCHO_CALLE/4
+                y = (CENTRO_Y + stop_dist) + (i * (h_auto + gap)) + h_auto/2
+                self.crear_vehiculo_visual(x, y, w_auto, h_auto, COLOR_AUTO_ESPERA, 'S', tag)
+                
+            elif id_sem == 'E': # Cola hacia derecha, miran hacia IZQUIERDA ('E')
+                # Nota: Intercambiamos w y h para coches horizontales
+                x = (CENTRO_X + stop_dist) + (i * (w_auto + gap)) + w_auto/2 # w_auto es el largo aquí
+                y = CENTRO_Y - ANCHO_CALLE/4
+                self.crear_vehiculo_visual(x, y, h_auto, w_auto, COLOR_AUTO_ESPERA, 'E', tag) # w=36, h=22
+                
+            elif id_sem == 'O': # Cola hacia izquierda, miran hacia DERECHA ('O')
+                x = (CENTRO_X - stop_dist) - (i * (w_auto + gap)) - w_auto/2
+                y = CENTRO_Y + ANCHO_CALLE/4
+                self.crear_vehiculo_visual(x, y, h_auto, w_auto, COLOR_AUTO_ESPERA, 'O', tag)
+            
+            self.colas_graficas[id_sem].append(tag)
         
         # Asegurar que el semáforo completo esté encima
         sg = self.sem_graficos[id_sem]
@@ -351,58 +469,66 @@ class TrafficApp:
 
     def generar_auto_cruzando(self, id_sem):
         """Crea un auto animado que cruza la intersección"""
-        w, h = 20, 30
+        w, h = 22, 36
         vx, vy = 0, 0
+        import time
+        tag = f"mov_{id_sem}_{int(time.time()*1000)}" # Tag único con timestamp
         
         # Determinar posición inicial y velocidad según dirección
-        if id_sem == 'N': # Baja
+        if id_sem == 'N': # Baja, mira ABAJO
             x = CENTRO_X - ANCHO_CALLE/4
             y = CENTRO_Y - ANCHO_CALLE/2 - 20
             vx, vy = 0, 8
-            rect = self.canvas.create_rectangle(x-10, y, x+10, y+h, fill=COLOR_AUTO_CRUZANDO)
-        elif id_sem == 'S': # Sube
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AUTO_CRUZANDO, 'N', tag)
+            
+        elif id_sem == 'S': # Sube, mira ARRIBA
             x = CENTRO_X + ANCHO_CALLE/4
             y = CENTRO_Y + ANCHO_CALLE/2 + 20
             vx, vy = 0, -8
-            rect = self.canvas.create_rectangle(x-10, y-h, x+10, y, fill=COLOR_AUTO_CRUZANDO)
-        elif id_sem == 'E': # Va a izquierda
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AUTO_CRUZANDO, 'S', tag)
+            
+        elif id_sem == 'E': # Va a izquierda, mira IZQUIERDA
             x = CENTRO_X + ANCHO_CALLE/2 + 20
             y = CENTRO_Y - ANCHO_CALLE/4
             vx, vy = -8, 0
-            rect = self.canvas.create_rectangle(x, y-10, x+h, y+10, fill=COLOR_AUTO_CRUZANDO)
-        elif id_sem == 'O': # Va a derecha
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AUTO_CRUZANDO, 'E', tag)
+            
+        elif id_sem == 'O': # Va a derecha, mira DERECHA
             x = CENTRO_X - ANCHO_CALLE/2 - 20
             y = CENTRO_Y + ANCHO_CALLE/4
             vx, vy = 8, 0
-            rect = self.canvas.create_rectangle(x-h, y-10, x, y+10, fill=COLOR_AUTO_CRUZANDO)
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AUTO_CRUZANDO, 'O', tag)
             
-        self.autos_animados.append({'id': rect, 'vx': vx, 'vy': vy})
+        self.autos_animados.append({'tag': tag, 'vx': vx, 'vy': vy}) # Guardamos el TAG
+
 
     def bucle_animacion(self):
         """Actualiza la posición de los autos animados"""
         por_eliminar = []
         
         for auto in self.autos_animados:
-            # Mover el rectángulo
-            self.canvas.move(auto['id'], auto['vx'], auto['vy'])
+            # Mover TODO el grupo asociado al tag
+            self.canvas.move(auto['tag'], auto['vx'], auto['vy'])
             
-            # Si es ambulancia, mover también el texto
+            # Si es ambulancia, mover también el texto (aunque ahora la ambulancia puede usar tags grupo si la actualizamos)
             if 'texto' in auto:
                 self.canvas.move(auto['texto'], auto['vx'], auto['vy'])
             
-            coords = self.canvas.coords(auto['id'])
+            # Obtener coords del bounding box del grupo
+            coords = self.canvas.bbox(auto['tag'])
             
             # Verificar si salió de la pantalla
-            if (coords[2] < 0 or coords[0] > ANCHO_VENTANA or 
-                coords[3] < 0 or coords[1] > ALTO_VENTANA):
+            if not coords or (coords[2] < 0 or coords[0] > ANCHO_VENTANA or 
+                              coords[3] < 0 or coords[1] > ALTO_VENTANA):
                 por_eliminar.append(auto)
         
         # Limpieza
         for auto in por_eliminar:
-            self.canvas.delete(auto['id'])
-            if 'texto' in auto:  # Si es ambulancia, eliminar también el texto
+            self.canvas.delete(auto['tag']) # Borra todo el grupo
+            if 'texto' in auto:  # Si es ambulancia antigua
                 self.canvas.delete(auto['texto'])
             self.autos_animados.remove(auto)
+
         
         # Asegurar que todos los semáforos siempre estén encima
         for sem_id, sg in self.sem_graficos.items():
@@ -461,35 +587,47 @@ class TrafficApp:
     
     def generar_ambulancia_cruzando(self, id_sem):
         """Crea una ambulancia animada que cruza la intersección con prioridad"""
-        w, h = 25, 35  # Ambulancia más grande
+        w, h = 25, 38  # Ambulancia más grande
         vx, vy = 0, 0
+        import time
+        tag = f"amb_{id_sem}_{int(time.time()*1000)}"
         
         # Determinar posición inicial y velocidad según dirección
         if id_sem == 'N': # Baja
             x = CENTRO_X - ANCHO_CALLE/4
             y = CENTRO_Y - ANCHO_CALLE/2 - 20
             vx, vy = 0, 10  # Más rápida
-            rect = self.canvas.create_rectangle(x-12, y, x+12, y+h, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AMBULANCIA, 'N', tag)
         elif id_sem == 'S': # Sube
             x = CENTRO_X + ANCHO_CALLE/4
             y = CENTRO_Y + ANCHO_CALLE/2 + 20
             vx, vy = 0, -10
-            rect = self.canvas.create_rectangle(x-12, y-h, x+12, y, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, w, h, COLOR_AMBULANCIA, 'S', tag)
         elif id_sem == 'E': # Va a izquierda
             x = CENTRO_X + ANCHO_CALLE/2 + 20
             y = CENTRO_Y - ANCHO_CALLE/4
             vx, vy = -10, 0
-            rect = self.canvas.create_rectangle(x, y-12, x+h, y+12, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AMBULANCIA, 'E', tag)
         elif id_sem == 'O': # Va a derecha
             x = CENTRO_X - ANCHO_CALLE/2 - 20
             y = CENTRO_Y + ANCHO_CALLE/4
             vx, vy = 10, 0
-            rect = self.canvas.create_rectangle(x-h, y-12, x, y+12, fill=COLOR_AMBULANCIA, outline="white", width=2)
+            self.crear_vehiculo_visual(x, y, h, w, COLOR_AMBULANCIA, 'O', tag)
         
-        # Añadir texto "AMB" en la ambulancia
-        texto_amb = self.canvas.create_text(x, y, text="AMB", fill="white", font=("Arial", 8, "bold"))
+        # Añadir texto "AMB" sobre la ambulancia (como parte del mismo grupo visual)
+        # Bbox para centrar texto
+        coords = self.canvas.bbox(tag)
+        if coords:
+            cx = (coords[0] + coords[2]) / 2
+            cy = (coords[1] + coords[3]) / 2
+            self.canvas.create_text(cx, cy, text="AMB", fill="white", font=("Arial", 8, "bold"), tags=tag)
+            
+            # Cruz roja distintiva en el techo
+            r_cross = 6
+            self.canvas.create_line(cx-r_cross, cy, cx+r_cross, cy, fill="red", width=3, tags=tag)
+            self.canvas.create_line(cx, cy-r_cross, cx, cy+r_cross, fill="red", width=3, tags=tag)
         
-        self.autos_animados.append({'id': rect, 'vx': vx, 'vy': vy, 'es_ambulancia': True, 'texto': texto_amb})
+        self.autos_animados.append({'tag': tag, 'vx': vx, 'vy': vy, 'es_ambulancia': True})
     
     def iniciar_efecto_sirena(self):
         """Inicia el efecto visual de sirena parpadeando"""
@@ -637,94 +775,114 @@ class VistaImagenes:
         self.vista_actual = 'Aérea'
     
     def crear_ventana(self):
-        """Crea la ventana de vistas"""
+        """Crea la ventana de vistas estilo Cyber-Dashboard"""
+        from config import THEME_BG, THEME_BG_SEC, THEME_FG, THEME_FG_SEC, THEME_ACCENT, THEME_BORDER
+        
         self.window = tk.Toplevel(self.parent)
-        self.window.title("Vistas de la Intersección")
-        self.window.geometry("1000x800")
+        self.window.title("Camera Views - Intersection Analysis")
+        self.window.geometry("1100x850")
+        self.window.configure(bg=THEME_BG)
         self.window.protocol("WM_DELETE_WINDOW", self.cerrar)
         
-        # Header
-        header = tk.Frame(self.window, bg="#2c3e50", pady=15)
-        header.pack(fill=tk.X)
+        # Container principal
+        main_container = tk.Frame(self.window, bg=THEME_BG, padx=20, pady=20)
+        main_container.pack(fill=tk.BOTH, expand=True)
+
+        # Header limpio
+        header = tk.Frame(main_container, bg=THEME_BG)
+        header.pack(fill=tk.X, pady=(0, 20))
         
-        titulo = tk.Label(header, text="🖼️ Vistas de la Intersección", 
-                         font=("Arial", 16, "bold"), 
-                         bg="#2c3e50", fg="white")
-        titulo.pack()
+        tk.Label(header, text="CAMERA FEEDS", font=("Segoe UI", 20, "bold"), 
+                bg=THEME_BG, fg=THEME_FG).pack(anchor="w")
+        tk.Label(header, text="Real-time optical sensors visualization", font=("Segoe UI", 10), 
+                bg=THEME_BG, fg=THEME_FG_SEC).pack(anchor="w")
         
-        # Frame principal
-        main_frame = tk.Frame(self.window, bg="#ecf0f1")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        # Toolbar (Vistas + Zoom)
+        toolbar = tk.Frame(main_container, bg=THEME_BG_SEC, padx=10, pady=10)
+        toolbar.pack(fill=tk.X, pady=(0, 15))
         
-        # Frame para botones de selección
-        btn_frame = tk.Frame(main_frame, bg="#ecf0f1")
-        btn_frame.pack(fill=tk.X, pady=(0, 15))
+        # 1. Botones de Vistas
+        views_frame = tk.Frame(toolbar, bg=THEME_BG_SEC)
+        views_frame.pack(side=tk.LEFT)
         
-        # Crear botones para cada vista
         self.botones_vista = {}
+        # Colores Cyber para direcciones
         colores = {
-            'Norte': '#3498db',
-            'Sur': '#2ecc71',
-            'Este': '#e74c3c',
-            'Oeste': '#f39c12',
-            'Aérea': '#9b59b6'
+            'Norte': '#3b82f6', # Azul
+            'Sur': '#10b981',   # Verde
+            'Este': '#ef4444',  # Rojo
+            'Oeste': '#f59e0b', # Naranja
+            'Aérea': '#8b5cf6'  # Violeta
         }
         
+        def crear_tab(parent, text, color, cmd):
+            # Botón plano que se ilumina al estar activo
+            btn = tk.Button(parent, text=text,
+                           font=("Segoe UI", 10, "bold"),
+                           bg=THEME_BG, fg=THEME_FG_SEC, # Estado inactivo por defecto
+                           activebackground=color, activeforeground="white",
+                           relief=tk.FLAT, bd=0, cursor="hand2",
+                           width=10, pady=5,
+                           command=cmd)
+            btn.pack(side=tk.LEFT, padx=2)
+            
+            # Guardamos el color original para efectos
+            btn.color_activo = color 
+            return btn
+
         for vista in ['Norte', 'Sur', 'Este', 'Oeste', 'Aérea']:
-            btn = tk.Button(btn_frame, text=vista,
-                          font=("Arial", 10, "bold"),
-                          bg=colores.get(vista, '#95a5a6'),
-                          fg="white",
-                          relief=tk.RAISED, bd=2,
-                          width=12,
-                          command=lambda v=vista: self.cambiar_vista(v))
-            btn.pack(side=tk.LEFT, padx=5)
+            btn = crear_tab(views_frame, vista, colores.get(vista, THEME_FG), 
+                           lambda v=vista: self.cambiar_vista(v))
             self.botones_vista[vista] = btn
+
+        # Separador
+        tk.Frame(toolbar, bg=THEME_BORDER, width=2, height=30).pack(side=tk.LEFT, padx=15, fill=tk.Y)
         
-        # Frame para controles de zoom
-        zoom_frame = tk.Frame(main_frame, bg="#ecf0f1")
-        zoom_frame.pack(fill=tk.X, pady=(0, 10))
+        # 2. Controles de Zoom
+        zoom_frame = tk.Frame(toolbar, bg=THEME_BG_SEC)
+        zoom_frame.pack(side=tk.LEFT, padx=30)
         
-        # Botón Zoom Out
-        btn_zoom_out = tk.Button(zoom_frame, text="➖ Zoom Out",
-                                font=("Arial", 9, "bold"),
-                                bg="#e74c3c", fg="white",
-                                relief=tk.RAISED, bd=2,
-                                command=self.zoom_out)
-        btn_zoom_out.pack(side=tk.LEFT, padx=5)
+        tk.Label(zoom_frame, text="ZOOM:", font=("Segoe UI", 9, "bold"), 
+                bg=THEME_BG_SEC, fg=THEME_FG_SEC).pack(side=tk.LEFT, padx=(0, 10))
         
-        # Botón Reset Zoom
-        btn_zoom_reset = tk.Button(zoom_frame, text="🔄 Reset",
-                                  font=("Arial", 9, "bold"),
-                                  bg="#95a5a6", fg="white",
-                                  relief=tk.RAISED, bd=2,
-                                  command=self.zoom_reset)
-        btn_zoom_reset.pack(side=tk.LEFT, padx=5)
+        def crear_zoom_btn(txt, cmd, w=4):
+            b = tk.Button(zoom_frame, text=txt, font=("Segoe UI", 11, "bold"),
+                         bg=THEME_BG_SEC, fg=THEME_FG,
+                         activebackground=THEME_BG, activeforeground=THEME_FG,
+                         relief=tk.FLAT, bd=0, cursor="hand2",
+                         width=w, pady=2,
+                         command=cmd)
+            b.pack(side=tk.LEFT, padx=2)
+            b.bind("<Enter>", lambda e: b.config(bg=THEME_BG))
+            b.bind("<Leave>", lambda e: b.config(bg=THEME_BG_SEC))
+            return b
+
+        crear_zoom_btn("-", self.zoom_out)
         
-        # Botón Zoom In
-        btn_zoom_in = tk.Button(zoom_frame, text="➕ Zoom In",
-                               font=("Arial", 9, "bold"),
-                               bg="#2ecc71", fg="white",
-                               relief=tk.RAISED, bd=2,
-                               command=self.zoom_in)
-        btn_zoom_in.pack(side=tk.LEFT, padx=5)
+        # Label directo con ancho fijo suficiente y sin containers extraños
+        self.label_zoom = tk.Label(zoom_frame, text="100%", width=8,
+                                  font=("Segoe UI", 11, "bold"),
+                                  bg="#1e293b", fg=THEME_ACCENT)
+        self.label_zoom.pack(side=tk.LEFT, padx=5, ipady=3) # ipady para altura
         
-        # Label para mostrar nivel de zoom
-        self.label_zoom = tk.Label(zoom_frame, text="Zoom: 100%",
-                                  font=("Arial", 9),
-                                  bg="#ecf0f1", fg="#2c3e50")
-        self.label_zoom.pack(side=tk.LEFT, padx=15)
+        crear_zoom_btn("+", self.zoom_in)
         
-        # Frame para la imagen con scroll
-        canvas_frame = tk.Frame(main_frame, bg="#ecf0f1")
-        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        # Botón Reset con ancho explícito para que no se colapse
+        crear_zoom_btn("Reset", self.zoom_reset, w=6)
+
+        # Frame para la imagen (Canvas container)
+        # Usamos bg oscuro para enmarcar la imagen
+        canvas_container = tk.Frame(main_container, bg="#000000", bd=2, relief=tk.SOLID) 
+        # Borde #000 para contraste máximo con imagen
+        canvas_container.pack(fill=tk.BOTH, expand=True)
+
+        # Canvas con scrollbars (estilizados es difícil en tk standard, los dejamos default o minimizamos)
+        scrollbar_v = tk.Scrollbar(canvas_container, orient=tk.VERTICAL)
+        scrollbar_h = tk.Scrollbar(canvas_container, orient=tk.HORIZONTAL)
         
-        # Canvas con scrollbars
-        scrollbar_v = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
-        scrollbar_h = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL)
-        
-        self.canvas = tk.Canvas(canvas_frame, 
-                               bg="#ffffff",
+        self.canvas = tk.Canvas(canvas_container, 
+                               bg="#0f172a", # Fondo del canvas (si la imagen es chica se ve esto)
+                               highlightthickness=0,
                                yscrollcommand=scrollbar_v.set,
                                xscrollcommand=scrollbar_h.set)
         
@@ -739,23 +897,29 @@ class VistaImagenes:
         self.canvas.bind("<MouseWheel>", self.on_mousewheel)
         self.canvas.bind("<Button-4>", self.on_mousewheel)  # Linux
         self.canvas.bind("<Button-5>", self.on_mousewheel)  # Linux
-        self.canvas.focus_set()  # Permitir que el canvas reciba eventos
+        self.canvas.focus_set()
         
         # Cargar imagen inicial
         self.cargar_imagen(self.vista_actual)
     
     def cambiar_vista(self, vista):
-        """Cambia a la vista seleccionada"""
+        """Cambia a la vista seleccionada (Cyber Style)"""
+        from config import THEME_BG, THEME_FG_SEC
+        
         self.vista_actual = vista
         self.nivel_zoom = 1.0  # Resetear zoom al cambiar vista
         self.cargar_imagen(vista)
         
-        # Actualizar apariencia de botones
+        # Actualizar apariencia de tabs
         for nombre, btn in self.botones_vista.items():
             if nombre == vista:
-                btn.config(relief=tk.SUNKEN, state=tk.DISABLED)
+                # Activo: Color intenso, texto blanco
+                # Usamos el color guardado en el botón
+                color = getattr(btn, 'color_activo', '#3b82f6')
+                btn.config(bg=color, fg="white")
             else:
-                btn.config(relief=tk.RAISED, state=tk.NORMAL)
+                # Inactivo: Fondo oscuro, texto gris
+                btn.config(bg=THEME_BG, fg=THEME_FG_SEC)
     
     def cargar_imagen(self, vista):
         """Carga y muestra la imagen seleccionada"""
@@ -879,7 +1043,7 @@ class VistaImagenes:
         """Actualiza el label que muestra el nivel de zoom"""
         if self.label_zoom:
             porcentaje = int(self.nivel_zoom * 100)
-            self.label_zoom.config(text=f"Zoom: {porcentaje}%")
+            self.label_zoom.config(text=f"{porcentaje}%")
     
     def cerrar(self):
         """Cierra la ventana de vistas"""

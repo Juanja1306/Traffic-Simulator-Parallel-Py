@@ -1,14 +1,26 @@
 # ==========================================
 # CONFIGURACIÓN Y CONSTANTES
 # ==========================================
-ANCHO_VENTANA = 800
-ALTO_VENTANA = 600
-COLOR_FONDO = "#212121"  # Fondo más oscuro, estilo dark mode moderno
-COLOR_CALLE = "#424242"  # Calles gris oscuro mate
-COLOR_LINEA = "#FFEB3B"  # Amarillo vibrante para líneas
-COLOR_AUTO_ESPERA = "#FF5252"  # Rojo coral vibrante
-COLOR_AUTO_CRUZANDO = "#69F0AE" # Verde menta neón
-COLOR_AMBULANCIA = "#FF9800"    # Naranja intenso
+# ==========================================
+# CONFIGURACIÓN Y CONSTANTES GLOBAL
+# ==========================================
+
+# Configuración de la Ventana Global (Dashboard)
+ANCHO_VENTANA = 1000
+ALTO_VENTANA = 700
+TITULO_VENTANA = "Simulador de Tráfico - Computación Paralela"
+
+# Configuración del Canvas (Área de Simulación Izquierda)
+CANVAS_ANCHO = 700
+CANVAS_ALTO = 700 # Cuadrado para el cruce
+
+# Colores (Tema Cyber-Traffic Simulation)
+COLOR_FONDO = "#0f172a"        # Azul medianoche profundo (Canvas bg)
+COLOR_CALLE = "#1e293b"        # Asfalto azulado oscuro
+COLOR_LINEA = "#facc15"        # Amarillo neón para líneas
+COLOR_AUTO_ESPERA = "#e74c3c"  # Mantenemos rojo para espera
+COLOR_AUTO_CRUZANDO = "#2ecc71" # Verde para movimiento
+COLOR_AMBULANCIA = "#ffffff"   # Blanco base para ambulancia (con cruz roja)
 
 # Colores Semáforo Moderno
 COLOR_SEMAFORO_CUERPO = "#000000"
@@ -17,8 +29,25 @@ COLOR_LUZ_AMARILLA = "#FFC107"  # Ámbar
 COLOR_LUZ_VERDE = "#00E676"     # Verde brillante
 COLOR_LUZ_OFF = "#333333"       # Gris oscuro para luz apagada
 
-# Coordenadas
-CENTRO_X, CENTRO_Y = ANCHO_VENTANA // 2, ALTO_VENTANA // 2
+# ==========================================
+# UI THEME (CYBER-TRAFFIC)
+# ==========================================
+# Paleta inspirada en imagen de referencia (Azules profundos, Cian, Neón)
+THEME_BG = "#0f172a"            # Azul medianoche profundo (Fondo principal)
+THEME_BG_SEC = "#1e293b"        # Azul grisáceo oscuro (Paneles, Cards)
+THEME_FG = "#f1f5f9"            # Blanco azulado (Texto principal)
+THEME_FG_SEC = "#94a3b8"        # Gris azulado (Texto secundario)
+THEME_ACCENT = "#38bdf8"        # Cian eléctrico (Acentos, Bordes)
+THEME_BORDER = "#334155"        # Borde sutil
+
+# Colores específicos de estado para UI (Vibrantes)
+UI_SUCCESS = "#10b981"          # Verde esmeralda neón
+UI_DANGER = "#f43f5e"           # Rojo frambuesa neón
+UI_WARNING = "#f59e0b"          # Ámbar brillante
+UI_INFO = "#3b82f6"             # Azul real brillante
+
+# Coordenadas (Centradas en el Canvas de Simulación)
+CENTRO_X, CENTRO_Y = CANVAS_ANCHO // 2, CANVAS_ALTO // 2
 ANCHO_CALLE = 100
 OFFSET_SEMAFORO = 60 # Distancia del semáforo al centro
 

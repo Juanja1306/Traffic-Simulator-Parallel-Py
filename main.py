@@ -25,6 +25,30 @@ def seleccionar_modo():
     
     modo_seleccionado = [None]  # Usar lista para modificar desde dentro de funciones
     
+    # Configurar ventana
+    ancho_vent = 550
+    alto_vent = 380
+    
+    # Centrar ventana
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    x_cord = int((screen_width/2) - (ancho_vent/2))
+    y_cord = int((screen_height/2) - (alto_vent/2))
+    
+    root.geometry(f"{ancho_vent}x{alto_vent}+{x_cord}+{y_cord}")
+    root.resizable(False, False) # Tamaño fijo para mantener diseño
+    
+    # Paleta Cyber-Traffic (Sincronizada con config.py)
+    bg_color = "#0f172a"      # Fondo principal
+    card_bg = "#1e293b"       # Fondo secundario
+    text_main = "#f1f5f9"     # Texto principal
+    text_sec = "#94a3b8"      # Texto secundario
+    accent_blue = "#3b82f6"   # Azul vibrante (Procesos)
+    accent_green = "#10b981"  # Verde vibrante (Hilos)
+    
+    root.configure(bg=bg_color)
+    root.title("Traffic Simulator Launcher")
+    
     # Manejar cierre de ventana
     def on_closing():
         modo_seleccionado[0] = None
@@ -33,41 +57,66 @@ def seleccionar_modo():
     
     root.protocol("WM_DELETE_WINDOW", on_closing)
     
-    # Frame principal
-    frame = tk.Frame(root, padx=20, pady=20)
-    frame.pack(fill=tk.BOTH, expand=True)
+    # Container principal con padding
+    container = tk.Frame(root, bg=bg_color, padx=40, pady=40)
+    container.pack(fill=tk.BOTH, expand=True)
     
-    # Título
-    titulo = tk.Label(frame, text="Seleccione el modo de ejecución:", 
-                     font=("Arial", 12, "bold"))
-    titulo.pack(pady=(0, 20))
+    # Títulos
+    lbl_brand = tk.Label(container, text="TRAFFIC SIMULATOR", 
+                        font=("Segoe UI", 18, "bold"), bg=bg_color, fg=text_main)
+    lbl_brand.pack(pady=(0, 5))
     
-    # Frame para botones
-    frame_botones = tk.Frame(frame)
-    frame_botones.pack(pady=10)
+    lbl_sub = tk.Label(container, text="Seleccione el modo de ejecución", 
+                      font=("Segoe UI", 11), bg=bg_color, fg=text_sec)
+    lbl_sub.pack(pady=(0, 30))
     
-    # Botón Procesos
-    btn_procesos = tk.Button(frame_botones, text="PROCESOS", 
-                             font=("Arial", 11, "bold"),
-                             width=15, height=2,
-                             bg="#3498db", fg="white",
-                             relief=tk.RAISED, bd=3,
-                             command=lambda: [modo_seleccionado.__setitem__(0, MODO_PROCESOS), root.quit()])
-    btn_procesos.pack(side=tk.LEFT, padx=10)
+    # Frame Botones
+    btn_frame = tk.Frame(container, bg=bg_color)
+    btn_frame.pack(fill=tk.X, pady=10)
     
-    # Botón Hilos
-    btn_hilos = tk.Button(frame_botones, text="HILOS", 
-                          font=("Arial", 11, "bold"),
-                          width=15, height=2,
-                          bg="#2ecc71", fg="white",
-                          relief=tk.RAISED, bd=3,
-                          command=lambda: [modo_seleccionado.__setitem__(0, MODO_HILOS), root.quit()])
-    btn_hilos.pack(side=tk.LEFT, padx=10)
+    # Función factory para botones estilizados
+    def crear_boton(parent, text, color, cmd, icon="🚀"):
+        f = tk.Frame(parent, bg=color, padx=2, pady=2) # Borde simulado
+        b = tk.Button(f, text=f"{icon}  {text}", 
+                     font=("Segoe UI", 11, "bold"),
+                     bg=color, fg="white",
+                     activebackground="white", activeforeground=color,
+                     relief=tk.FLAT, bd=0, cursor="hand2",
+                     width=16, height=2,
+                     command=cmd)
+        b.pack(fill=tk.BOTH, expand=True)
+        # Efecto hover simple
+        def on_enter(e): b['bg'] = "#ffffff"; b['fg'] = color
+        def on_leave(e): b['bg'] = color; b['fg'] = "white"
+        b.bind("<Enter>", on_enter)
+        b.bind("<Leave>", on_leave)
+        return f
     
-    # Información
-    info = tk.Label(frame, text="Procesos: Mayor aislamiento\nHilos: Menor overhead", 
-                   font=("Arial", 9), fg="#7f8c8d", justify=tk.LEFT)
-    info.pack(pady=(10, 0))
+    # Botón Procesos (Izquierda)
+    btn_p_con = crear_boton(btn_frame, "PROCESOS", accent_blue, 
+                           lambda: [modo_seleccionado.__setitem__(0, MODO_PROCESOS), root.quit()], "⚙️")
+    btn_p_con.pack(side=tk.LEFT, padx=(0, 10), expand=True)
+
+    # Botón Hilos (Derecha)
+    btn_h_con = crear_boton(btn_frame, "HILOS", accent_green, 
+                           lambda: [modo_seleccionado.__setitem__(0, MODO_HILOS), root.quit()], "⚡")
+    btn_h_con.pack(side=tk.RIGHT, padx=(10, 0), expand=True)
+    
+    # Tarjeta de Información
+    info_card = tk.LabelFrame(container, text=" Detalles Técnicos ", 
+                             font=("Segoe UI", 9, "bold"), fg=text_sec,
+                             bg=bg_color, bd=1, relief=tk.SOLID)
+    info_card.config(fg="#475569") # Color del borde del texto
+    # Tkinter LabelFrame border color es dificil, usamos Frame simulado mejor
+    
+    info_frame = tk.Frame(container, bg=card_bg, padx=15, pady=15)
+    info_frame.pack(fill=tk.X, pady=(30, 0))
+    
+    tk.Label(info_frame, text="• Procesos:", font=("Segoe UI", 9, "bold"), bg=card_bg, fg=text_main).pack(anchor="w")
+    tk.Label(info_frame, text="  Memoria independiente, ideal para CPU-bound.", font=("Segoe UI", 9), bg=card_bg, fg=text_sec).pack(anchor="w", pady=(0, 5))
+    
+    tk.Label(info_frame, text="• Hilos:", font=("Segoe UI", 9, "bold"), bg=card_bg, fg=text_main).pack(anchor="w")
+    tk.Label(info_frame, text="  Memoria compartida, bajo consumo de recursos.", font=("Segoe UI", 9), bg=card_bg, fg=text_sec).pack(anchor="w")
     
     root.mainloop()
     root.destroy()
